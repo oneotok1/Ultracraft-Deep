@@ -117,9 +117,10 @@ public final class UltracraftConfig {
 	/** Entrances a boss makes unless another is picked: the Apostate's rematch taunts ("YOU'RE GETTING RUSTY, MACHINE!"). */
 	public static final Map<String, String> BOSS_INTRO_DEFAULTS = Map.of("gabriel2", "rematch");
 
-	/** The entrance a boss makes (an alternate's id), or null for its own as ULTRAKILL has it ("-" picked). */
-	public static String bossIntroAlt(String boss) {
-		String pick = bossIntroAlts.getOrDefault(boss, BOSS_INTRO_DEFAULTS.get(boss));
+	/** The entrance a boss makes (an alternate's id), or null for its own as ULTRAKILL has it. A boss with a default
+	 * alternate makes it from the second fight on ("first": never beaten it yet, so it makes its own entrance). */
+	public static String bossIntroAlt(String boss, boolean first) {
+		String pick = bossIntroAlts.getOrDefault(boss, first ? null : BOSS_INTRO_DEFAULTS.get(boss));
 		return pick == null || pick.isEmpty() || pick.equals("-") ? null : pick;
 	}
 	/** Boss Setup (BossSetup): "boss.option" -> value. */
@@ -223,6 +224,11 @@ public final class UltracraftConfig {
 				if (k.startsWith("cheat.")) cheats.put(k.substring(6), Boolean.parseBoolean(p.getProperty(k).trim()));
 				if (k.startsWith("bossSong.")) bossSongs.put(k.substring(9), p.getProperty(k).trim());
 				if (k.startsWith("bossIntro.")) bossIntroAlts.put(k.substring(10), p.getProperty(k).trim());
+				// the old shared Encounter setting of a pair of fights: dropped, and the file written back without it
+				if (k.startsWith("bossSet.") && k.endsWith(".encounter")) {
+					complete = false;
+					continue;
+				}
 				if (k.startsWith("bossSet.")) bossSets.put(k.substring(8), p.getProperty(k).trim());
 			}
 			if (!complete) save();

@@ -70,7 +70,7 @@ final class UcCheats {
 		c.add(options(ULTRACRAFT));
 		c.header("Bosses");
 		Button setup = Button.builder(Component.literal("Boss Setup..."), b -> Minecraft.getInstance().setScreen(new UcBossSetupScreen(c.self())))
-			.tooltip(Tooltip.create(Component.literal("Each boss as you want it: first encounter or rematch, its phase, health, speed, damage and traits, whether it comes on its own, practice fights, and a Fight Now button."))).build();
+			.tooltip(Tooltip.create(Component.literal("Each boss as you want it (every one set apart, both Gabriels and both V2s too): its phase, health, speed, damage and traits, whether it comes on its own, practice fights, and a Fight Now button."))).build();
 		c.add(setup, null);
 	}
 

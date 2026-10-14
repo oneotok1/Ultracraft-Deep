@@ -38,8 +38,8 @@ final class UcBossMusicScreen extends OptionsSubScreen {
 
 	/** Its entrance's name ("Rematch"), or null for its own. */
 	static String introLabel(String boss) {
-		String pick = UltracraftConfig.bossIntroAlt(boss);
-		if (pick == null) return null;
+		String pick = UltracraftConfig.bossIntroAlts.get(boss);
+		if (pick == null || pick.equals("-")) return null;
 		for (Alt a : ALTS.getOrDefault(boss, List.of())) if (a.id().equals(pick)) return a.name();
 		return null;
 	}
@@ -82,7 +82,14 @@ final class UcBossMusicScreen extends OptionsSubScreen {
 			if (alts != null) {
 				list.addHeader(Component.literal("Entrance"));
 				List<AbstractWidget> row = new ArrayList<>();
-				row.add(intro(null, UltracraftConfig.BOSS_INTRO_DEFAULTS.containsKey(boss.key()) ? "Level Intro" : "(Default)", "Its own entrance, as ULTRAKILL has it (Boss Intros: Short or Full)."));
+				String auto = UltracraftConfig.BOSS_INTRO_DEFAULTS.get(boss.key());
+				if (auto != null) {
+					String autoName = alts.stream().filter(a -> a.id().equals(auto)).map(Alt::name).findFirst().orElse(auto);
+					row.add(intro(null, "(Default) Auto", "Its own entrance the first time you meet it (until you've beaten it), then " + autoName + " in every rematch."));
+					row.add(intro("-", "Level Intro", "Always its own entrance, as ULTRAKILL has it (Boss Intros: Short or Full)."));
+				} else {
+					row.add(intro(null, "(Default)", "Its own entrance, as ULTRAKILL has it (Boss Intros: Short or Full)."));
+				}
 				for (Alt a : alts) row.add(intro(a.id(), a.name(), a.about()));
 				list.addSmall(row);
 				list.addHeader(Component.literal("Music"));
@@ -103,13 +110,11 @@ final class UcBossMusicScreen extends OptionsSubScreen {
 		}
 
 		private Button intro(String id, String text, String tooltip) {
-			String now = UltracraftConfig.bossIntroAlt(boss.key());
+			String now = UltracraftConfig.bossIntroAlts.get(boss.key());
 			boolean picked = id == null ? now == null : id.equals(now);
 			Button b = Button.builder(Component.literal((picked ? "> " : "") + text + (picked ? " <" : "")), btn -> {
-				// its own entrance: "-" when another is its default, so that one doesn't come back
-				String keep = id != null ? id : UltracraftConfig.BOSS_INTRO_DEFAULTS.containsKey(boss.key()) ? "-" : null;
-				if (keep == null) UltracraftConfig.bossIntroAlts.remove(boss.key());
-				else UltracraftConfig.bossIntroAlts.put(boss.key(), keep);
+				if (id == null) UltracraftConfig.bossIntroAlts.remove(boss.key());
+				else UltracraftConfig.bossIntroAlts.put(boss.key(), id);
 				UltracraftConfig.save();
 				minecraft.setScreen(new Pick(lastScreen, boss));
 			}).build();

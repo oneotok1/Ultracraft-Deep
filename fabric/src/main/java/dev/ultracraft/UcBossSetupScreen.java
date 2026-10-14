@@ -22,8 +22,6 @@ final class UcBossSetupScreen extends OptionsSubScreen {
 	static String summary(String key) {
 		List<String> bits = new ArrayList<>();
 		if (!BossSetup.inRotation(key)) bits.add("not in rotation");
-		String e = BossSetup.encounter(key);
-		if (BossSetup.family(key) != null && !e.equals("both")) bits.add(e.equals("first") ? "first only" : "rematch only");
 		if (BossSetup.hasPhases(key) && BossSetup.flag(key, "phase2")) bits.add("phase 2");
 		for (String[] m : new String[][] {{"health", "HP"}, {"speed", "speed"}, {"damage", "dmg"}}) {
 			int t = BossSetup.tenths(key, m[0]);
@@ -78,17 +76,6 @@ final class UcBossSetupScreen extends OptionsSubScreen {
 			OptionInstance<Boolean> practice = bool("Practice",
 				"Beating it pays nothing and doesn't count as beaten (no P, loot or experience; your boss count and difficulty stay as they are).", "practice");
 			list.addSmall(rotation, practice);
-			String fam = BossSetup.family(k);
-			if (fam != null) {
-				boolean v2 = fam.equals("v2");
-				String[] names = {"Both Fights", v2 ? "First (1-4)" : "First (3-2)", v2 ? "Rematch (4-4)" : "Rematch (6-2)"};
-				String[] keys = {"both", "first", "rematch"};
-				int now = java.util.Arrays.asList(keys).indexOf(BossSetup.encounter(k));
-				list.addSmall(UcSettingsScreen.slider("Encounter",
-					v2 ? "Which V2 fight: 1-4's (V2, its first) or 4-4's (V2 with the green arm, the rematch), or both as they come. Shared by both V2s; an arena's V2 follows it too."
-						: "Which Gabriel: 3-2's Judge of Hell (the first encounter) or 6-2's Apostate of Hate (the rematch), or both as they come. Shared by both Gabriels; an arena's Gabriel follows it too.",
-					0, 2, Math.max(0, now), v -> names[v], v -> BossSetup.set(fam, "encounter", keys[v], "both")));
-			}
 			// ---- how it fights
 			list.addHeader(Component.literal("How it fights"));
 			list.addSmall(times("Health", "How much damage it takes to beat (ULTRAKILL's own health modifier).", "health", 3, 40),

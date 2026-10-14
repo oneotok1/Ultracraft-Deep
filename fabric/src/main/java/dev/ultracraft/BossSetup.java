@@ -10,8 +10,6 @@ import java.util.Set;
  * Boss Setup (Cheats -> Boss Setup...): each boss as the player wants it, saved as bossSet.&lt;boss&gt;.&lt;option&gt;.
  * <ul>
  * <li>In rotation: whether it comes on its own (the schedule never picks it when off; it can still be called);</li>
- * <li>Encounter (V2, Gabriel): both of ULTRAKILL's fights, only the first (1-4 V2, 3-2 Gabriel), or only the rematch
- * (4-4 V2 with the green arm, 6-2 Gabriel);</li>
  * <li>Traits: random (the Trait Chance setting), none, or the ones picked;</li>
  * <li>Health, speed and damage multipliers (ULTRAKILL's own modifiers);</li>
  * <li>Second phase from the start (Gabriel's "Enough!", the Primes' "WEAK"/enraged half);</li>
@@ -53,44 +51,6 @@ final class BossSetup {
 
 	static boolean inRotation(String boss) {
 		return !flag(boss, "notInRotation");
-	}
-
-	/** The pair a boss belongs to (V2 and its rematch, Gabriel and his), by its first fight's key; null if none. */
-	static String family(String boss) {
-		return switch (boss) {
-			case "v2", "v2green" -> "v2";
-			case "gabriel", "gabriel2" -> "gabriel";
-			default -> null;
-		};
-	}
-
-	static boolean isRematch(String boss) {
-		return boss.equals("v2green") || boss.equals("gabriel2");
-	}
-
-	/** both, first or rematch. */
-	static String encounter(String boss) {
-		String f = family(boss);
-		return f == null ? "both" : get(f, "encounter", "both");
-	}
-
-	/** Whether the schedule (and an arena) may bring this one, by its pair's Encounter. */
-	static boolean encounterAllows(String boss) {
-		String e = encounter(boss);
-		return e.equals("both") || (e.equals("first") ? !isRematch(boss) : isRematch(boss));
-	}
-
-	/** The fight to bring when this one is asked for (an arena's, the schedule's): the other of its pair if its
-	 * Encounter rules this one out. */
-	static String resolve(String boss) {
-		if (encounterAllows(boss) || family(boss) == null) return boss;
-		return switch (boss) {
-			case "v2" -> "v2green";
-			case "v2green" -> "v2";
-			case "gabriel" -> "gabriel2";
-			case "gabriel2" -> "gabriel";
-			default -> boss;
-		};
 	}
 
 	/** random, none or pick. */

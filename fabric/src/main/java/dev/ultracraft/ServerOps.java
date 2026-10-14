@@ -81,6 +81,8 @@ public final class ServerOps {
 
 	/** Mobs ULTRAKILL's enemies sent flying, and the tick they were: no fall damage for them until they land. */
 	private static final Map<LivingEntity, Integer> FLUNG = new HashMap<>();
+	/** Players just in, and the tick their join is dealt with: not while their client is still loading the world. */
+	private static final Map<UUID, Integer> justJoined = new HashMap<>();
 
 	static void fling(LivingEntity le) {
 		le.fallDistance = 0;
@@ -98,9 +100,26 @@ public final class ServerOps {
 		});
 	}
 
+	/** A player joined: dealt with a second from now, once their client has the world (joining is what puts a
+	 * Cyber Grind runner back at the spawn, and moving them mid-load left them stuck on "Loading terrain"). */
+	static void joinLater(ServerPlayer sp) {
+		justJoined.put(sp.getUUID(), ticks + 20);
+	}
+
 	/** Every server tick: each V1's spawns, bosses and Cyber Grind. */
 	static void tick(MinecraftServer server) {
 		ticks++;
+		justJoined.entrySet().removeIf(e -> {
+			if (e.getValue() > ticks) return false;
+			ServerPlayer sp = server.getPlayerList().getPlayer(e.getKey());
+			// still loading, and not so long ago that they are gone: wait for them (600 ticks at the most)
+			if (sp != null && !sp.connection.hasClientLoaded() && e.getValue() > ticks - 600) return false;
+			if (sp != null) {
+				guard("joined", () -> BossParty.joined(sp));
+				guard("joined", () -> CyberGrind.joined(sp));
+			}
+			return true;
+		});
 		landFlung();
 		if (ticks % 10 == 0) guard("boss party", () -> BossParty.tick(server));
 		guard("duels", () -> Duels.tick(server));

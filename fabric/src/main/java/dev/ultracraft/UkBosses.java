@@ -204,9 +204,8 @@ final class UkBosses {
 		List<Integer> weight = new ArrayList<>();
 		int total = 0;
 		for (Boss b : ROSTER) {
-			if (b.tier > tier) continue;
-			// Boss Setup: out of rotation, or the other fight of its pair
-			if (!BossSetup.inRotation(b.key) || !BossSetup.encounterAllows(b.key)) continue;
+			// Boss Setup: out of rotation
+			if (b.tier > tier || !BossSetup.inRotation(b.key)) continue;
 			// the newest tier the most, a fresh face more, a boss on its home ground more
 			int w = 2 + b.tier * 2 + (b.tier == tier ? 6 : 0);
 			if (!p.beaten.containsKey(b.key)) w += 6;
@@ -240,8 +239,7 @@ final class UkBosses {
 	 */
 	static void force(ServerPlayer sp, String key, int seconds, String pickMods) {
 		if (phase != Phase.IDLE) return;
-		// (a boss asked for by name comes as its pair's Encounter has it: Judge or Apostate, 1-4 or 4-4)
-		Boss b = key.equals("next") ? pick(sp, UkProgress.get(sp)) : byKey(BossSetup.resolve(key));
+		Boss b = key.equals("next") ? pick(sp, UkProgress.get(sp)) : byKey(key);
 		if (b == null && key.equals("next")) {
 			sp.sendSystemMessage(Component.literal("[Ultracraft] Every boss you can face is out of rotation (Cheats -> Boss Setup).").withStyle(ChatFormatting.GRAY));
 			return;
@@ -275,7 +273,7 @@ final class UkBosses {
 	/** An arena's boss: it was waiting there, so there's no warning; it comes onto the dais at once. */
 	static boolean arena(ServerPlayer sp, String key, Vec3 at, String layer, Runnable onBeaten) {
 		if (phase != Phase.IDLE) return false;
-		Boss b = byKey(BossSetup.resolve(key));
+		Boss b = byKey(key);
 		if (b == null) return false;
 		boss = b;
 		target = sp.getUUID();
@@ -488,13 +486,14 @@ final class UkBosses {
 		for (Mod m : mods) keys.append(keys.length() > 0 ? "," : "").append(m.key);
 		// its entrance (which of them: Boss Music & Intros), and its death scene
 		StringBuilder flags = new StringBuilder();
-		String alt = UltracraftConfig.bossIntroAlt(boss.key);
+		boolean firstMeeting = !UkProgress.get(sp).beaten.containsKey(boss.key);
+		String alt = UltracraftConfig.bossIntroAlt(boss.key, firstMeeting);
 		boolean grind = BossSetup.grindVersion(boss.key);
 		if (alt != null && !alt.isEmpty()) flags.append("alt=").append(alt);
 		if (UltracraftConfig.bossDeaths && !grind) flags.append(flags.length() > 0 ? "," : "").append("outro");
 		for (String f : BossSetup.flags(boss.key)) flags.append(flags.length() > 0 ? "," : "").append(f);
 		// never beaten yet: their first meeting (Gabriel speaks to V1 before he fights it, as in 3-2)
-		if (!UkProgress.get(sp).beaten.containsKey(boss.key)) flags.append(flags.length() > 0 ? "," : "").append("first");
+		if (firstMeeting) flags.append(flags.length() > 0 ? "," : "").append("first");
 		UcNet.send(sp, String.format(Locale.ROOT, "BOSS %d %s %.2f %.2f %.2f %d %s %s %s", fightId, boss.key, at.x, at.y, at.z, difficulty, keys.length() > 0 ? keys : "-",
 			grind ? "nointro" : UltracraftConfig.bossIntros == 2 ? "introfull" : UltracraftConfig.bossIntros == 1 ? "intro" : "nointro", flags.length() > 0 ? flags : "-"));
 	}
