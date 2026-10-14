@@ -1,0 +1,36 @@
+{
+  "required": true,
+  "package": "dev.ultracraft.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "CameraMixin",
+    "EntityMixin",
+    "EntityRenderDispatcherMixin",
+    "ClientLevelMixin",
+    "ClientPacketListenerMixin",
+    "GameRendererMixin",
+    "InventoryScreenMixin",
+    "ItemInHandRendererMixin",
+    "LocalPlayerMixin",
+    "MinecraftMixin",
+    "MouseHandlerMixin",
+    "MusicManagerMixin",
+    "WindowMixin"
+  ],
+  "mixins": [
+    "AbstractArrowAccessor",
+    "LargeFireballAccessor",
+    "LivingEntityMixin",
+    "MobAccessor",
+    "PlayerMixin",
+    "PrimaryLevelDataMixin",
+    "ProjectileMixin",
+    "ServerGamePacketListenerImplMixin",
+    "ServerLevelMixin",
+    "ServerPlayerMixin",
+    "TridentItemMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

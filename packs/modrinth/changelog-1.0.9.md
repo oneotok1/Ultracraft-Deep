@@ -1,0 +1,1 @@
+- **Parried projectiles go back where you aim.** Parrying a Minecraft projectile (blaze and ghast fireballs, arrows...) could look like it flew straight through you, because Minecraft only sends their positions to your screen every 10-20 ticks. A parried or caught projectile's position is now sent at once, and while it hangs in front of you before the hit it's really there.

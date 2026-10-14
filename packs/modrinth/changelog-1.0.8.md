@@ -1,0 +1,8 @@
+- **Boss Setup** (Cheats -> Boss Setup...): a page for every boss.
+  - **Encounter** (V2, Gabriel): both fights, only the first (1-4 V2, 3-2 Gabriel) or only the rematch (4-4 V2 with the green arm, 6-2 Gabriel). Arenas follow it too.
+  - **In Rotation**: whether it comes on its own. **Practice**: no reward, and it doesn't count as beaten.
+  - **Health, Speed and Damage** multipliers, using ULTRAKILL's own modifiers.
+  - **Second Phase From the Start** for Gabriel (both), Minos Prime and Sisyphus Prime.
+  - **Traits**: random, none, or exactly the ones you pick.
+  - **As in its level**: V2 retreats at a third of its health like in 1-4 (counts as a win), Cerberus wakes one at a time like in 0-5, the Ferryman takes a Marksman coin and lets you pass like in 5-2, and the Primes can be their Cyber Grind versions (no speeches, quick death).
+  - **Music & Entrance...** and a **Fight Now** button that calls the boss in 3 seconds, set up as on its page.

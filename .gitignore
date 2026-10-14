@@ -1,0 +1,23 @@
+# abandoned Rust prototype and local test data
+/target/
+/runtime/
+/oracle/
+/src/
+Cargo.toml
+Cargo.lock
+rust-toolchain.toml
+# local Minecraft instance, worlds, builds
+/minecraft/
+fabric/run*/
+fabric/.gradle/
+fabric/build/
+ultrabridge/bin/
+ultrabridge/obj/
+# BepInEx 5 as bundled into the jar (copied from an ULTRAKILL install; see fabric/build.gradle)
+ultrabridge/bepinex/
+dist/
+*.log
+# screenshots of the game
+docs/*.png
+docs/*.webp
+/prodtest*/

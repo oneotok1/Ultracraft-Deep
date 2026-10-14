@@ -1,0 +1,50 @@
+{
+  "structures": [
+    {
+      "structure": "ultracraft:arena_prelude",
+      "weight": 1
+    },
+    {
+      "structure": "ultracraft:arena_limbo",
+      "weight": 1
+    },
+    {
+      "structure": "ultracraft:arena_lust",
+      "weight": 1
+    },
+    {
+      "structure": "ultracraft:arena_gluttony",
+      "weight": 1
+    },
+    {
+      "structure": "ultracraft:arena_greed",
+      "weight": 1
+    },
+    {
+      "structure": "ultracraft:arena_wrath",
+      "weight": 1
+    },
+    {
+      "structure": "ultracraft:arena_heresy",
+      "weight": 1
+    },
+    {
+      "structure": "ultracraft:arena_violence",
+      "weight": 1
+    },
+    {
+      "structure": "ultracraft:arena_fraud",
+      "weight": 1
+    },
+    {
+      "structure": "ultracraft:arena_prime",
+      "weight": 1
+    }
+  ],
+  "placement": {
+    "type": "minecraft:random_spread",
+    "spacing": 36,
+    "separation": 14,
+    "salt": 1471259843
+  }
+}

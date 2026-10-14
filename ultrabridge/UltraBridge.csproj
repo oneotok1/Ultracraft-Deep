@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>UltraBridge</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GameDir Condition="'$(GameDir)' == ''">D:\SteamLibrary\steamapps\common\ULTRAKILL</GameDir>
+    <Managed>$(GameDir)\ULTRAKILL_Data\Managed</Managed>
+    <!-- BepInEx: ULTRAKILL's own, or the copy kept for the Fabric jar (bepinex/, out of git) when ULTRAKILL has none yet -->
+    <BepInExCore>$(GameDir)\BepInEx\core</BepInExCore>
+    <BepInExCore Condition="!Exists('$(GameDir)\BepInEx\core\BepInEx.dll')">$(MSBuildThisFileDirectory)bepinex\BepInEx\core</BepInExCore>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- references to the user's own install; nothing from the game is copied into the build output -->
+    <Reference Include="BepInEx"><HintPath>$(BepInExCore)\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(BepInExCore)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(Managed)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(Managed)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(Managed)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(Managed)\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.ImageConversionModule"><HintPath>$(Managed)\UnityEngine.ImageConversionModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.ScreenCaptureModule"><HintPath>$(Managed)\UnityEngine.ScreenCaptureModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(Managed)\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(Managed)\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(Managed)\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.InputSystem"><HintPath>$(Managed)\Unity.InputSystem.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.TerrainModule"><HintPath>$(Managed)\UnityEngine.TerrainModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.Collections"><HintPath>$(Managed)\Unity.Collections.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AIModule"><HintPath>$(Managed)\UnityEngine.AIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>$(Managed)\UnityEngine.ParticleSystemModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AudioModule"><HintPath>$(Managed)\UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule"><HintPath>$(Managed)\UnityEngine.UnityWebRequestModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UnityWebRequestAudioModule"><HintPath>$(Managed)\UnityEngine.UnityWebRequestAudioModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AssetBundleModule"><HintPath>$(Managed)\UnityEngine.AssetBundleModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AnimationModule"><HintPath>$(Managed)\UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>$(Managed)\Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.Addressables"><HintPath>$(Managed)\Unity.Addressables.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.ResourceManager"><HintPath>$(Managed)\Unity.ResourceManager.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <Target Name="Deploy" AfterTargets="Build">
+    <Copy SourceFiles="$(OutputPath)UltraBridge.dll" DestinationFolder="$(GameDir)\BepInEx\plugins\UltraBridge" />
+  </Target>
+</Project>

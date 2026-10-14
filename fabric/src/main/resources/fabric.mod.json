@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "ultracraft",
+  "version": "${version}",
+  "name": "Ultracraft",
+  "description": "Plays the real ULTRAKILL's V1 inside Minecraft: ULTRAKILL runs alongside and is streamed into this window; Minecraft blocks and mobs are sent back as its world and enemies.",
+  "authors": ["V1"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "main": ["dev.ultracraft.UltracraftCommon"],
+    "client": ["dev.ultracraft.Ultracraft"]
+  },
+  "mixins": ["ultracraft.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": "${minecraft}",
+    "fabric-api": "*"
+  }
+}

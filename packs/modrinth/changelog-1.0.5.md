@@ -1,0 +1,13 @@
+- **Boss entrances.** Bosses arrive the way their level brings them in: ULTRAKILL's title card, their real entrance animation, and their voice lines with ULTRAKILL's own subtitles. Gabriel appears in a pillar of light, Minos Prime forms from a falling soul, Sisyphus Prime breaks out and drops from the sky, V2 drops in and bows. A boss can't be hurt until its entrance is over. **Boss Intros** (Enemies & Bosses): Off, Short, or Full (the Primes' and Gabriel's whole speeches).
+- **Boss deaths.** Beaten bosses go out the way their fight ends. Minos and Sisyphus Prime fall to their knees, say their last words, rise in shafts of light and burst. Gabriel rages ("THIS IS NOT OVER!") or, in 6-2, wonders ("Twice!?"), then vanishes. **Boss Deaths** (Enemies & Bosses) turns this off.
+- **Boss Music & Intros.** Each boss plays its own ULTRAKILL theme (Order, War, The Death of God's Will...). Pick a different song per boss, or (Default). Gabriel, Minos Prime and Sisyphus Prime also have another entrance to choose, like Gabriel's 6-2 rematch: "IS THIS WHAT I LOST TO!? YOU'RE GETTING RUSTY, MACHINE! ...HERE AND NOW!"
+- **Your own music.** Put mp3, ogg or wav files in `ultracraft/music` in your Minecraft folder (there's an **Open Your Music Folder** button). They show up under **Your Music** for fight music and boss themes.
+- **Boss arenas.** A new setting (off by default) takes you and nearby V1s to an arena built after the boss's own room in ULTRAKILL, and back when the fight is over.
+- **Cyber Grind.** The arena is the real 16 x 16 grid, shifting into a new pattern every wave. It uses ULTRAKILL's own 38 patterns, plus 32 more made for Ultracraft, plus any `.cgp` patterns you put in ULTRAKILL's `Cybergrind/Patterns` folder.
+- **Whiplash on Minecraft mobs.** It hits and hurts them, pulls small mobs to you, and pulls you to big ones.
+- **Easier shop recipe:** stone, a glass pane, two iron ingots and a copper ingot.
+- **Enemies don't get stuck** on terrain or fall in loops anymore.
+- **V2 no longer flies up into the sky.**
+- **Faster mob melee:** Minecraft mobs' hits land after 0.2 s instead of 0.65 s.
+- **Fixes.** Parrying works again. Enemies no longer show through blocks. Bodies are cleaned up when you change dimension or move far away.
+- **Better performance.** ULTRAKILL's hidden Sandbox level is put to sleep, ULTRAKILL renders less, and the shop no longer drops your frame rate.

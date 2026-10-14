@@ -1,0 +1,13 @@
+{
+  "name": "Ultracraft",
+  "summary": "The real ULTRAKILL inside Minecraft 1.21.11, with Sodium and Essential for hosting worlds with friends.",
+  "author": "Ultracraft",
+  "minecraft": "1.21.11",
+  "fabricLoader": "0.19.5",
+  "mods": [
+    {"name": "Fabric API", "modrinthVersion": "6qAuTtLR", "curseforge": [306612, 8525513]},
+    {"name": "Sodium", "modrinthVersion": "rkdTcxoT", "curseforge": [394468, 8756612]},
+    {"name": "Essential", "modrinthVersion": "6sZzbHVD", "curseforge": [546670, 8905484]},
+    {"name": "Essential Tweaks", "curseforge": [1533884, 9029770], "note": "CurseForge only (not on Modrinth, all rights reserved): unbinds Essential's keys"}
+  ]
+}

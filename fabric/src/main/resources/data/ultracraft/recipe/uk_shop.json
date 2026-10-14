@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "CPC",
+    "IXI",
+    "CCC"
+  ],
+  "key": {
+    "C": "#minecraft:stone_crafting_materials",
+    "P": "minecraft:glass_pane",
+    "I": "minecraft:iron_ingot",
+    "X": "minecraft:copper_ingot"
+  },
+  "result": {
+    "id": "ultracraft:uk_shop",
+    "count": 1
+  }
+}

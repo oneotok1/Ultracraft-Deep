@@ -1,0 +1,1 @@
+- **The music stops when a boss dies.** As in ULTRAKILL, the fight music fades out the moment its death scene begins (Minos's and Sisyphus's last words, Gabriel's leaving), and the world's music comes back once the fight is over.

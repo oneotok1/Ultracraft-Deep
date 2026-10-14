@@ -1,0 +1,162 @@
+plugins {
+	id 'fabric-loom' version "${loom_version}"
+}
+
+repositories {
+	mavenCentral()
+}
+
+// ------------------------------------------------------------------ Minecraft versions
+// One source, several Minecraft versions: build with -Pmc=<version> (default 1.21.11). versions/<version>.properties
+// says which Minecraft and Fabric API that is. The sources are written for 1.21.11; where a version needs other code,
+// it's marked like this, and the matching branch is switched on when building for that version:
+//     //#if MC >= 12109
+//     code for 1.21.9 and newer
+//     //#else
+//     //$$ code for older versions
+//     //#endif
+def mc = (project.findProperty("mc") ?: "1.21.11").toString()
+def vp = new Properties()
+file("versions/${mc}.properties").withInputStream { vp.load(it) }
+vp.each { k, v -> project.ext.set(k, v) }
+def mcNum = { String v -> def p = v.tokenize('.') ; (p[0] as int) * 10000 + (p[1] as int) * 100 + (p.size() > 2 ? p[2] as int : 0) }
+def MC = mcNum(mc)
+layout.buildDirectory.set(file("build/${mc}"))
+
+def ppTest = { String cond ->
+	cond.split("&&").every { part ->
+		def m = (part.trim() =~ /MC\s*(>=|<=|==|!=|>|<)\s*(\d+)/)
+		if (!m.matches()) throw new GradleException("preprocessor: can't read '${part}'")
+		int n = m.group(2) as int
+		switch (m.group(1)) { case ">=": return MC >= n; case "<=": return MC <= n; case ">": return MC > n; case "<": return MC < n; case "==": return MC == n; default: return MC != n }
+	}
+}
+def ppText = { String text, String name ->
+	def out = new StringBuilder()
+	def stack = [] // each: [active of this branch, any branch taken, parent active]
+	boolean active = true
+	text.eachLine { line ->
+		def t = line.trim()
+		if (t.startsWith("//#if ")) {
+			boolean on = active && ppTest(t.substring(6))
+			stack << [active, on]
+			active = on
+			out << line << "\n"; return
+		}
+		if (t.startsWith("//#elseif ")) {
+			def top = stack.last()
+			boolean on = top[0] && !top[1] && ppTest(t.substring(10))
+			if (on) top[1] = true
+			active = on
+			out << line << "\n"; return
+		}
+		if (t == "//#else") {
+			def top = stack.last()
+			active = top[0] && !top[1]
+			top[1] = true
+			out << line << "\n"; return
+		}
+		if (t == "//#endif") {
+			active = stack.removeLast()[0]
+			out << line << "\n"; return
+		}
+		if (stack.isEmpty()) { out << line << "\n"; return }
+		def indent = line.takeWhile { it == '\t' || it == ' ' }
+		def body = line.substring(indent.length())
+		boolean commented = body.startsWith("//\$\$")
+		if (active && commented) out << indent << body.substring(4).replaceFirst(/^ /, "") << "\n"
+		else if (!active && !commented && body.length() > 0) out << indent << "//\$\$ " << body << "\n"
+		else out << line << "\n"
+	}
+	if (!stack.isEmpty()) throw new GradleException("preprocessor: unclosed //#if in ${name}")
+	out.toString()
+}
+def ppDir = file("build/${mc}/pp/java")
+delete ppDir
+fileTree("src/main/java").each { f ->
+	def rel = file("src/main/java").toPath().relativize(f.toPath()).toString()
+	def dst = new File(ppDir, rel)
+	dst.parentFile.mkdirs()
+	dst.setText(ppText(f.getText("UTF-8"), rel), "UTF-8")
+}
+sourceSets.main.java.srcDirs = [ppDir]
+
+loom {
+	runs {
+		client {
+			programArgs "--username", "V1", "--quickPlaySingleplayer", "Ultracraft"
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.ext.minecraft_version}"
+	mappings loom.officialMojangMappings()
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.ext.fabric_api_version}"
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+	inputs.property "mc", mc
+	filesMatching("fabric.mod.json") { expand "version": version, "minecraft": mc }
+	def java = project.ext.java_release
+	filesMatching("ultracraft.mixins.json") { filter { it.replace('"JAVA_21"', '"JAVA_' + java + '"') } }
+	// The ULTRAKILL side, for the mod to set up on the player's machine (UkInstaller): the UltraBridge plugin as just
+	// built, and BepInEx 5 (open source, LGPL; see ultrakill/BEPINEX-NOTICE.txt). BepInEx comes from ultrabridge/bepinex
+	// (kept out of git), filled the first time from the ULTRAKILL folder the plugin builds against (-PukDir=...). A
+	// jar without either would install nothing, so the build stops instead.
+	def ukDir = file((project.findProperty("ukDir") ?: "D:/SteamLibrary/steamapps/common/ULTRAKILL").toString())
+	def bepinex = file("../ultrabridge/bepinex")
+	def bridge = file("../ultrabridge/bin/Release/net472/UltraBridge.dll")
+	doFirst {
+		if (!new File(bepinex, "BepInEx/core/BepInEx.dll").isFile()) {
+			if (!new File(ukDir, "BepInEx/core/BepInEx.dll").isFile()) throw new GradleException("no BepInEx 5 to bundle: put it in ultrabridge/bepinex, or in ULTRAKILL (-PukDir=...)")
+			project.copy {
+				from(ukDir) { include "winhttp.dll", "doorstop_config.ini", ".doorstop_version", "changelog.txt", "BepInEx/core/*.dll" }
+				into bepinex
+			}
+		}
+		if (!bridge.isFile()) throw new GradleException("build the UltraBridge plugin first: ${bridge} is missing")
+	}
+	from(bridge.parentFile) {
+		include "UltraBridge.dll"
+		into "ultrakill/plugin"
+	}
+	from(bepinex) {
+		into "ultrakill/bepinex"
+	}
+}
+
+def javaRelease = (project.ext.java_release as int)
+tasks.withType(JavaCompile).configureEach { it.options.release = javaRelease; it.options.compilerArgs += ["-Xmaxerrs", "2000"] }
+
+java {
+	sourceCompatibility = JavaVersion.toVersion(javaRelease)
+	targetCompatibility = JavaVersion.toVersion(javaRelease)
+}
+
+// the jar says which Minecraft it's for: ultracraft-<version>+<minecraft>.jar
+base.archivesName = "ultracraft"
+version = "${project.version}+${mc}"
+
+// The Minecraft launcher's "Ultracraft" profile plays from ../minecraft: every build puts the mod (and the Fabric API
+// it needs) in its mods folder, so the launcher always starts the latest build.
+def launcherMods = file("../minecraft/mods")
+tasks.register("installLauncher") {
+	dependsOn remapJar
+	doLast {
+		launcherMods.mkdirs()
+		def api = configurations.detachedConfiguration(dependencies.create("net.fabricmc.fabric-api:fabric-api:${project.ext.fabric_api_version}"))
+		api.transitive = false
+		launcherMods.listFiles().findAll { it.name.startsWith("ultracraft-") || it.name.startsWith("fabric-api-") }.each { it.delete() }
+		copy {
+			from remapJar.archiveFile
+			from api.singleFile
+			into launcherMods
+		}
+	}
+}
+// the launcher profile plays 1.21.11
+if (mc == "1.21.11") build.finalizedBy installLauncher

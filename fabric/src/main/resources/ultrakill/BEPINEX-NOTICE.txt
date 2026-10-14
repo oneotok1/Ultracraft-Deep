@@ -1,0 +1,13 @@
+Ultracraft sets up the ULTRAKILL side for you: the UltraBridge plugin (part of Ultracraft) and, if ULTRAKILL doesn't
+have it yet, BepInEx 5, the mod loader UltraBridge runs in.
+
+The files under ultrakill/bepinex are BepInEx 5.4.23 for Windows x64, unmodified, with the libraries it ships with:
+
+- BepInEx               https://github.com/BepInEx/BepInEx                 LGPL-2.1
+- UnityDoorstop         https://github.com/NeighTools/UnityDoorstop        LGPL-2.1 (winhttp.dll, doorstop_config.ini)
+- HarmonyX              https://github.com/BepInEx/HarmonyX                MIT
+- MonoMod               https://github.com/MonoMod/MonoMod                 MIT
+- Mono.Cecil            https://github.com/jbevain/cecil                   MIT
+
+Their source code, licences and releases are at those addresses. BepInEx's own release of these files:
+https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.5

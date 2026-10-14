@@ -1,0 +1,612 @@
+package dev.ultracraft;
+
+import dev.ultracraft.mixin.AbstractArrowAccessor;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
+import net.minecraft.core.particles.ExplosionParticleInfo;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.util.Mth;
+import net.minecraft.util.random.WeightedList;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
+import net.minecraft.world.level.Explosion;
+import net.minecraft.world.level.ExplosionDamageCalculator;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseFireBlock;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+
+/**
+ * The server's side of Ultracraft: what one player's ULTRAKILL did to the shared world (block hits, blasts, damage
+ * to mobs, parries, P earned, things bought, enemies' positions...), as a line of text from that player (UcNet), and
+ * what the server runs for every V1 each tick (spawns in the dark, bosses, the Cyber Grind). Server thread only.
+ */
+public final class ServerOps {
+	/** What the server knows of each V1's player beyond their entity. */
+	static final class State {
+		boolean playing, shopTouch;
+		/** ULTRAKILL's style rank (STYLE) and the streak of kills at S and up (StyleRewards). */
+		int rank, streak;
+		/** Cheats on the server's side: Never Hungry, Infinite P (the Upgrades page takes nothing). */
+		boolean neverHungry, infiniteP;
+		/** When an arena last told this player about itself (game time). */
+		long arenaNoticeAt;
+		/** The stand-ins of this player's ULTRAKILL's enemies, by that ULTRAKILL's id. */
+		final Map<Integer, UkEnemyEntity> enemies = new HashMap<>();
+	}
+
+	private static final Map<UUID, State> STATES = new HashMap<>();
+	private static int ticks;
+
+	private ServerOps() {}
+
+	/**
+	 * Whether V1's (or, enemy, ULTRAKILL's enemies') attacks break blocks here: as the settings say, but never in the
+	 * Cyber Grind's arenas.
+	 */
+	static boolean breaks(Level level, boolean enemy) {
+		if (level.dimension() == GrindArenas.DIMENSION) return false;
+		return enemy ? UltracraftConfig.enemyBlockDamage : UltracraftConfig.playerBlockDamage;
+	}
+
+	static State state(ServerPlayer sp) {
+		return STATES.computeIfAbsent(sp.getUUID(), k -> new State());
+	}
+
+	static java.util.Collection<State> statesView() {
+		return STATES.values();
+	}
+
+	static boolean shopping(ServerPlayer sp) {
+		State s = STATES.get(sp.getUUID());
+		return s != null && s.shopTouch;
+	}
+
+	/** Mobs ULTRAKILL's enemies sent flying, and the tick they were: no fall damage for them until they land. */
+	private static final Map<LivingEntity, Integer> FLUNG = new HashMap<>();
+
+	static void fling(LivingEntity le) {
+		le.fallDistance = 0;
+		FLUNG.put(le, ticks);
+	}
+
+	private static void landFlung() {
+		if (FLUNG.isEmpty()) return;
+		FLUNG.entrySet().removeIf(en -> {
+			LivingEntity le = en.getKey();
+			if (le.isRemoved() || !le.isAlive()) return true;
+			le.fallDistance = 0;
+			int age = ticks - en.getValue();
+			return (age > 5 && le.onGround()) || le.isInWater() || age > 600;
+		});
+	}
+
+	/** Every server tick: each V1's spawns, bosses and Cyber Grind. */
+	static void tick(MinecraftServer server) {
+		ticks++;
+		landFlung();
+		if (ticks % 10 == 0) guard("boss party", () -> BossParty.tick(server));
+		guard("duels", () -> Duels.tick(server));
+		for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
+			State s = state(sp);
+			// the Never Hungry cheat (as Steve too)
+			if (s.neverHungry && ticks % 20 == 0) {
+				sp.getFoodData().setFoodLevel(20);
+				sp.getFoodData().setSaturation(5f);
+			}
+			if (!UcNet.isV1(sp)) continue;
+			if (ticks % 40 == 0 && !UkBosses.busy()) guard("spawns", () -> UkSpawns.tick(sp));
+			if (ticks % 10 == 0) guard("bosses", () -> UkBosses.tick(sp, s.playing));
+			if (ticks % 20 == 5) guard("arenas", () -> Arenas.tick(sp));
+			if (ticks % 10 == 0 && CyberGrind.running && CyberGrind.isRunner(sp)) guard("cyber grind", () -> CyberGrind.tick(sp));
+		}
+		if (ticks % 20 == 0) {
+			for (ServerLevel level : server.getAllLevels()) MobRules.sweep(level);
+		}
+	}
+
+	private static void guard(String what, Runnable r) {
+		try {
+			r.run();
+		} catch (RuntimeException e) {
+			org.slf4j.LoggerFactory.getLogger("ultracraft").error(what, e);
+		}
+	}
+
+	/** A player left: nothing of theirs stays (their enemies, a boss coming for them, their Cyber Grind run). */
+	static void left(ServerPlayer sp) {
+		State s = STATES.remove(sp.getUUID());
+		if (s != null) for (UkEnemyEntity e : s.enemies.values()) e.discard();
+		UkBosses.stop(sp, "they left");
+		CyberGrind.runnerLeft(sp);
+		UcNet.setServerV1(sp.level().getServer(), sp.getUUID(), false);
+	}
+
+	/** The world closed. */
+	static void reset() {
+		STATES.clear();
+		FLUNG.clear();
+		UcNet.clearServer();
+		Duels.reset();
+	}
+
+	/** Cheats are allowed for this player: in their own world (singleplayer, or the one they host), or as an operator. */
+	static boolean cheatsAllowed(ServerPlayer sp) {
+		MinecraftServer server = sp.level().getServer();
+		return server.isSingleplayerOwner(sp.nameAndId()) || sp.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
+	}
+
+	/** One line from a player (their ULTRAKILL's, or their Minecraft side's). */
+	static void handle(ServerPlayer sp, String msg) {
+		try {
+			dispatch(sp, msg);
+		} catch (RuntimeException e) {
+			org.slf4j.LoggerFactory.getLogger("ultracraft").warn("op from {}: {} ({})", sp.getName().getString(), msg.length() > 80 ? msg.substring(0, 80) : msg, e.toString());
+		}
+	}
+
+	private static void dispatch(ServerPlayer sp, String msg) {
+		int space = msg.indexOf(' ');
+		String cmd = space < 0 ? msg : msg.substring(0, space);
+		String rest = space < 0 ? "" : msg.substring(space + 1);
+		String[] a = msg.split(" ");
+		ServerLevel level = sp.level();
+		MinecraftServer server = level.getServer();
+		switch (cmd) {
+			case "V1" -> {
+				// V1 1|0 [keep]: this player became V1, or Steve again (keep: ULTRAKILL's enemies stay)
+				boolean on = rest.trim().equals("1");
+				boolean keep = rest.contains("keep");
+				UcNet.setServerV1(server, sp.getUUID(), on);
+				if (on) {
+					var src = server.createCommandSourceStack().withSuppressedOutput();
+					for (String c : new String[] {"gamerule player_movement_check false", "gamerule elytra_movement_check false", "gamerule fall_damage false", "gamerule natural_regeneration true"}) {
+						server.getCommands().performPrefixedCommand(src, c);
+					}
+					sp.getAbilities().mayfly = true;
+					sp.onUpdateAbilities();
+					UkProgress.get(sp).send();
+					CyberGrind.sendState(sp);
+				} else {
+					CyberGrind.stopIfRunner(sp, "back to Steve");
+					UkBosses.stop(sp, "V1 is gone");
+					State s = state(sp);
+					if (!keep) {
+						for (UkEnemyEntity e : s.enemies.values()) e.discard();
+						s.enemies.clear();
+					}
+				}
+			}
+			case "SHURT" -> {
+				// SHURT damage: as Steve, an ULTRAKILL enemy's hit (ULTRAKILL's 100 HP -> Minecraft's 20)
+				float dmg = Float.parseFloat(rest.trim()) / 5f;
+				if (dmg > 0 && sp.isAlive() && !UcNet.isV1(sp)) sp.hurtServer(sp.level(), sp.damageSources().generic(), dmg);
+			}
+			case "PLAYING" -> state(sp).playing = rest.trim().equals("1");
+			case "CHEATSRV" -> {
+				// CHEATSRV id 0/1: a cheat with a server side (only in the player's own world, or for operators)
+				boolean on = a.length > 2 && a[2].equals("1") && cheatsAllowed(sp);
+				State st = state(sp);
+				if (a[1].equals("ultracraft.never-hungry")) st.neverHungry = on;
+				else if (a[1].equals("ultracraft.infinite-p")) st.infiniteP = on;
+			}
+			case "NOSPAWN" -> UkSpawns.missing(rest.trim());
+			case "STYLE" -> StyleRewards.rank(sp, Integer.parseInt(rest.trim()));
+			case "SHOP" -> state(sp).shopTouch = rest.trim().equals("1");
+			case "PROGRESS" -> {
+				UkProgress.get(sp).send();
+				CyberGrind.sendState(sp);
+			}
+			case "DEAD" -> {
+				// V1 died in ULTRAKILL: Minecraft's player dies too (respawn goes through Minecraft); in a boss fight
+				// with a teammate still standing, only down (BossParty); in a duel, it's lost (and nobody dies)
+				if (Duels.lost(sp)) return;
+				if (BossParty.tryDown(sp)) return;
+				// the last one standing in the Grind's arenas: the run is over, and nobody dies for it
+				if (CyberGrind.inArenaRun(sp)) {
+					CyberGrind.wipe(sp);
+					return;
+				}
+				CyberGrind.stopIfRunner(sp, "V1 died");
+				UkBosses.stop(sp, "V1 died");
+				sp.kill(level);
+			}
+			case "VITALS" -> {
+				// VITALS hp max dead moved carried: Minecraft's hearts mirror V1's health; walking makes V1 hungry
+				int hp = Integer.parseInt(a[1]), max = Integer.parseInt(a[2]);
+				boolean dead = a[3].equals("1"), carried = a[5].equals("1");
+				double moved = Double.parseDouble(a[4]);
+				if (!dead && max > 0 && !sp.isDeadOrDying()) {
+					float h = Mth.clamp(hp * sp.getMaxHealth() / max, 1f, sp.getMaxHealth());
+					if (Math.abs(sp.getHealth() - h) > 0.01f) sp.setHealth(h);
+				}
+				if (moved > 0.01 && moved < 8 && !carried) sp.causeFoodExhaustion((float) (moved * 0.02));
+			}
+			case "UKE" -> UltracraftCommon.updateUkEnemies(sp, rest);
+			case "UKDIE" -> {
+				// UKDIE id: that enemy died (its puppets in the other players' ULTRAKILLs die with it)
+				UkEnemyEntity e = state(sp).enemies.get(Integer.parseInt(rest.trim()));
+				if (e != null) e.died();
+			}
+			case "PHIT" -> {
+				// PHIT entity damage head explosion: this player hit another player's enemy (its puppet in their
+				// ULTRAKILL): the real one, in its owner's ULTRAKILL, takes it
+				if (level.getEntity(Integer.parseInt(a[1])) instanceof UkEnemyEntity e && e.owner != null) {
+					ServerPlayer owner = server.getPlayerList().getPlayer(e.owner);
+					if (owner != null) UcNet.send(owner, "EHIT " + e.ukId + " " + a[2] + " " + a[3] + " " + a[4] + " " + sp.getId());
+				}
+			}
+			case "SLAM" -> {
+				// SLAM x y z drop: V1 slammed into the ground after falling `drop` blocks; from high up it leaves a crater
+				double x = Double.parseDouble(a[1]), y = Double.parseDouble(a[2]), z = Double.parseDouble(a[3]);
+				float power = Math.min(16f, Float.parseFloat(a[4]) / 12.5f);
+				slamHurt(sp, level, x, y, z, 1.5 + Math.max(0f, power) * 0.4);
+				if (power < 1f) return;
+				Level.ExplosionInteraction blocks = breaks(level, false) ? Level.ExplosionInteraction.TNT : Level.ExplosionInteraction.NONE;
+				level.explode(sp, null, V1_BLAST, x, y - 0.5, z, power, false, blocks, ParticleTypes.EXPLOSION, ParticleTypes.EXPLOSION_EMITTER, BLAST_DEBRIS, SoundEvents.GENERIC_EXPLODE);
+			}
+			case "RAIL" -> {
+				// RAIL x y z dx dy dz length radius: the Electric railcannon bores through the terrain
+				if (!breaks(level, false)) return;
+				Vec3 point = new Vec3(Double.parseDouble(a[1]), Double.parseDouble(a[2]), Double.parseDouble(a[3]));
+				Vec3 dir = new Vec3(Double.parseDouble(a[4]), Double.parseDouble(a[5]), Double.parseDouble(a[6])).normalize();
+				BlockDamage.tunnel(level, sp, point, dir, Float.parseFloat(a[7]), Float.parseFloat(a[8]));
+			}
+			case "BOOM" -> {
+				// an ULTRAKILL explosion: blow the same spot up in Minecraft (blocks, drops, mob knockback); "e": an
+				// enemy's; with its side's "Breaks Blocks" setting off it hurts and throws mobs but leaves blocks alone
+				double x = Double.parseDouble(a[1]), y = Double.parseDouble(a[2]), z = Double.parseDouble(a[3]);
+				String kind = a.length > 5 ? a[5] : "";
+				float size = Float.parseFloat(a[4]);
+				Level.ExplosionInteraction blocks = breaks(level, kind.equals("e")) ? Level.ExplosionInteraction.TNT : Level.ExplosionInteraction.NONE;
+				if (kind.equals("2")) {
+					// the mini nuke: a burning crater twice anything else's size, hurting every mob caught in it
+					float power = Math.max(18f, Math.min(UltracraftConfig.opShop ? 48f : 24f, size * 2f));
+					level.explode(sp, null, V1_SLAM, x, y, z, power, blocks != Level.ExplosionInteraction.NONE, blocks, ParticleTypes.EXPLOSION,
+						ParticleTypes.EXPLOSION_EMITTER, BLAST_DEBRIS, SoundEvents.GENERIC_EXPLODE);
+					return;
+				}
+				// the OP Shop's blasts (up to 15 times the size) get a bigger cap
+				float power = Math.max(1f, Math.min(UltracraftConfig.opShop ? 32f : kind.equals("1") ? 16f : 10f, size));
+				level.explode(sp, null, V1_BLAST, x, y, z, power, false, blocks, ParticleTypes.EXPLOSION, ParticleTypes.EXPLOSION_EMITTER, BLAST_DEBRIS, SILENT);
+				if (kind.equals("e")) {
+					// an enemy's blast: the mobs it throws land without a fall
+					double r = power * 2.0;
+					for (LivingEntity le : level.getEntitiesOfClass(LivingEntity.class, new net.minecraft.world.phys.AABB(x - r, y - r, z - r, x + r, y + r, z + r),
+						m -> m.isAlive() && !(m instanceof Player))) fling(le);
+				}
+			}
+			case "HIT" -> {
+				// HIT x y z dx dy dz damage radius ax ay az [e]: a weapon struck a block
+				Vec3 point = new Vec3(Double.parseDouble(a[1]), Double.parseDouble(a[2]), Double.parseDouble(a[3]));
+				Vec3 dir = new Vec3(Double.parseDouble(a[4]), Double.parseDouble(a[5]), Double.parseDouble(a[6]));
+				float damage = a.length > 7 ? Float.parseFloat(a[7]) : 1f;
+				float radius = a.length > 8 ? Float.parseFloat(a[8]) : 0f;
+				Vec3 aim = a.length > 11 ? new Vec3(Double.parseDouble(a[9]), Double.parseDouble(a[10]), Double.parseDouble(a[11])).normalize() : dir.normalize();
+				boolean enemy = a.length > 12 && a[12].equals("e");
+				if (!breaks(level, enemy)) return;
+				BlockDamage.clearPlants(level, sp, point, aim, Math.min(64.0, point.distanceTo(sp.getEyePosition()) + 1.0));
+				BlockDamage.hit(level, sp, point, dir.normalize(), damage, radius);
+			}
+			case "FIRE" -> {
+				// burning gasoline, or a Streetcleaner's flames ("e"): Minecraft fire there
+				if (!breaks(level, a.length > 4 && a[4].equals("e"))) return;
+				BlockPos p = BlockPos.containing(Double.parseDouble(a[1]), Double.parseDouble(a[2]), Double.parseDouble(a[3]));
+				for (BlockPos c : new BlockPos[] {p, p.above(), p.below()}) {
+					if (level.getBlockState(c).isAir() && BaseFireBlock.canBePlacedAt(level, c, Direction.UP)) {
+						level.setBlockAndUpdate(c, BaseFireBlock.getState(level, c));
+						break;
+					}
+				}
+			}
+			case "DMG" -> damage(sp, level, a);
+			case "MKNOCK" -> {
+				// MKNOCK id vx vy vz: one of ULTRAKILL's enemies launched this mob as it would launch V1 (its new speed,
+				// blocks a tick); it lands without a fall
+				if (level.getEntity(Integer.parseInt(a[1])) instanceof LivingEntity le && le.isAlive() && !(le instanceof Player)) {
+					le.setDeltaMovement(Double.parseDouble(a[2]), Double.parseDouble(a[3]), Double.parseDouble(a[4]));
+					le.hurtMarked = true;
+					fling(le);
+				}
+			}
+			case "WHIP" -> {
+				// WHIP id vx vy vz: V1's Whiplash reels this mob in (its speed in blocks a tick)
+				if (level.getEntity(Integer.parseInt(a[1])) instanceof LivingEntity le && le.isAlive() && !UcNet.isV1(le)) {
+					le.setDeltaMovement(Double.parseDouble(a[2]), Double.parseDouble(a[3]), Double.parseDouble(a[4]));
+					le.fallDistance = 0;
+					le.hurtMarked = true;
+				}
+			}
+			case "PIMPACT" -> {
+				// ULTRAKILL says this projectile hit V1: apply its own hit (arrow damage, fireball blast...) to V1
+				if (level.getEntity(Integer.parseInt(a[1])) instanceof Projectile pr && pr.isAlive()) {
+					release(pr);
+					pr.setPos(sp.getX(), sp.getY() + sp.getBbHeight() * 0.6, sp.getZ());
+					((Ultracraft.HitApplier) pr).ultracraft$applyHit(new EntityHitResult(sp));
+				}
+			}
+			case "PHOLD" -> {
+				// the projectile reached V1 and hangs there a moment (a punch now parries it)
+				int id = Integer.parseInt(a[1]);
+				if (level.getEntity(id) instanceof Projectile pr && pr.isAlive() && !HELD.containsKey(id)) {
+					Vec3 came = pr.getDeltaMovement();
+					HELD.put(id, new Held(came, pr.isNoGravity()));
+					// where ULTRAKILL holds it: just in front of V1's eyes, on the side it came from (by now Minecraft
+					// has often carried it on through V1, which it flies through)
+					Vec3 back = came.lengthSqr() > 1e-6 ? came.normalize().scale(-1) : sp.getLookAngle();
+					pr.setPos(sp.getEyePosition().add(back.scale(0.8)).subtract(0, pr.getBbHeight() * 0.5, 0));
+					pr.setDeltaMovement(Vec3.ZERO);
+					pr.setNoGravity(true);
+					pr.hurtMarked = true;
+					syncNow(level, pr);
+				}
+			}
+			case "PRELEASE" -> {
+				// V1 dodged it while it hung there: it flies on
+				int id = Integer.parseInt(a[1]);
+				if (level.getEntity(id) instanceof Projectile pr && pr.isAlive()) {
+					Held h = HELD.get(id);
+					release(pr);
+					if (h != null) pr.setDeltaMovement(h.velocity);
+					pr.hurtMarked = true;
+					syncNow(level, pr);
+				}
+			}
+			case "PARRY" -> parry(sp, level, a);
+			case "PEARN" -> {
+				// style V1 earned is its P
+				UkProgress p = UkProgress.get(sp);
+				p.earn(Integer.parseInt(a[1].trim()));
+				p.sendMoney();
+			}
+			case "PADD" -> {
+				UkProgress p = UkProgress.get(sp);
+				p.add(Integer.parseInt(a[1].trim()));
+				p.sendMoney();
+			}
+			case "V1STATE", "FX" -> {
+				// how this V1 stands and what its game spawned: for every other player near enough to see it
+				String out = (cmd.equals("FX") ? "RFX " : "RV1 ") + sp.getId() + " " + rest;
+				for (ServerPlayer o : server.getPlayerList().getPlayers()) {
+					if (o != sp && o.level() == sp.level() && o.distanceToSqr(sp) < 160 * 160) UcNet.send(o, out);
+				}
+			}
+			case "GEARADD" -> {
+				String gear = rest.trim();
+				UkProgress.get(sp).addGear(gear);
+				sp.sendSystemMessage(Component.literal("[Ultracraft] Bought: " + GearNames.of(gear)).withStyle(net.minecraft.ChatFormatting.GOLD));
+			}
+			case "EQUIP" -> {
+				if (a.length >= 3) UkProgress.get(sp).setEquip(a[1], Integer.parseInt(a[2].trim()));
+			}
+			case "UPBUY" -> {
+				// UPBUY key [free]: free with the Infinite P cheat
+				String key = a[1];
+				UkProgress p = UkProgress.get(sp);
+				boolean free = a.length > 2 && a[2].equals("free") && state(sp).infiniteP && cheatsAllowed(sp);
+				if (p.buyUpgrade(key, free)) {
+					sp.sendSystemMessage(Component.literal("[Ultracraft] " + UkUpgrades.name(key) + " upgraded to level " + p.level(key) + " of "
+						+ UkUpgrades.TRACKS.get(key).max() + ".").withStyle(net.minecraft.ChatFormatting.GOLD));
+				}
+				p.sendMoney();
+				p.sendUpgrades();
+			}
+			case "BOSSPOS" -> UkBosses.moved(sp, Integer.parseInt(a[1]), new Vec3(Double.parseDouble(a[2]), Double.parseDouble(a[3]), Double.parseDouble(a[4])),
+				a.length > 5 ? Float.parseFloat(a[5]) : -1f);
+			// SPECTATE 1|-1: down in a boss fight, watch the next (or previous) teammate still standing
+			case "SPECTATE" -> BossParty.cycle(sp, Integer.parseInt(a[1]));
+			case "BOSSDEAD" -> UkBosses.beaten(sp, Integer.parseInt(a[1]), new Vec3(Double.parseDouble(a[2]), Double.parseDouble(a[3]), Double.parseDouble(a[4])));
+			case "BOSSGONE" -> UkBosses.gone(sp, Integer.parseInt(a[1]), a.length > 2 ? a[2] : "?");
+			case "GRIND" -> CyberGrind.toggle(sp, Long.parseLong(rest.trim()));
+			case "SPAWNS" -> {
+				// a shop's Sandbox page switched ULTRAKILL's enemies spawning in the dark (the world's setting)
+				UltracraftConfig.ukSpawns = rest.trim().equals("1");
+				UltracraftConfig.save();
+				CyberGrind.sendStateAll(server);
+				sp.displayClientMessage(Component.literal(UltracraftConfig.ukSpawns ? "ULTRAKILL's enemies spawn in the dark again" : "ULTRAKILL's enemies no longer spawn in the dark"), true);
+			}
+			case "UKDEAD" -> {
+				// UKDEAD type x y z rank grind: one of this player's ULTRAKILL's enemies died: its experience drops there
+				Vec3 at = new Vec3(Double.parseDouble(a[2]), Double.parseDouble(a[3]), Double.parseDouble(a[4]));
+				int rank = a.length > 5 ? Integer.parseInt(a[5]) : 0;
+				UkSpawns.died(sp, level, a[1], at, rank);
+				if (a.length > 6 && a[6].equals("1")) CyberGrind.died(sp);
+			}
+			// GRINDGONE: one of the wave's enemies never came, or fell out of the world: the wave doesn't wait for it
+			case "GRINDGONE" -> CyberGrind.died(sp);
+			default -> {
+			}
+		}
+	}
+
+	// ------------------------------------------------------------------ damage to mobs
+
+	/** DMG id amount head explosion parry by: V1 (or one of its ULTRAKILL's enemies, by) hurt a Minecraft entity. */
+	/**
+	 * Minecraft health per ULTRAKILL damage V1 deals a mob. A revolver shot is two hits of 1.25 (ULTRAKILL's own beam),
+	 * a headshot twice that: at the start (40% Power) a headshot does 2, and at 10 a point that killed a spider (16) and
+	 * left a zombie (20) on a sliver. At 6, either takes two headshots; fully upgraded weapons still kill in one.
+	 * ULTRAKILL's enemies hitting mobs, and a parry, keep 10.
+	 */
+	private static final float V1_HIT = 6f;
+
+	private static void damage(ServerPlayer sp, ServerLevel level, String[] a) {
+		int id = Integer.parseInt(a[1]);
+		float amount = Float.parseFloat(a[2]);
+		boolean explosion = a[4].equals("1");
+		boolean parry = a.length > 5 && a[5].equals("1");
+		int by = a.length > 6 ? Integer.parseInt(a[6]) : 0;
+		boolean fire = a.length > 7 && a[7].equals("1");
+		Entity e = level.getEntity(id);
+		if (e instanceof EndCrystal crystal) {
+			// an end crystal V1 shot or blew up: it goes off, whatever the world-destruction setting
+			if (crystal.isAlive()) crystal.hurtServer(level, explosion ? level.damageSources().explosion(sp, sp) : level.damageSources().playerAttack(sp), Math.max(1f, amount * 10f));
+			return;
+		}
+		if (!(e instanceof LivingEntity le) || !le.isAlive()) return;
+		UkEnemyEntity enemy = by != 0 ? state(sp).enemies.get(by) : null;
+		// V1s don't hurt each other (their shots stop at a teammate), unless they're dueling (Duels); enemies do
+		if (enemy == null && UcNet.isV1(le)) {
+			if (le instanceof ServerPlayer other && Duels.hits(sp, other)) {
+				le.invulnerableTime = 0;
+				le.hurtServer(level, explosion ? level.damageSources().explosion(sp, sp) : level.damageSources().playerAttack(sp), amount * 10f * Duels.DAMAGE);
+			}
+			return;
+		}
+		// ULTRAKILL has no invulnerability frames
+		le.invulnerableTime = 0;
+		var src = enemy != null && !enemy.isRemoved() ? level.damageSources().mobAttack(enemy)
+			: fire ? level.damageSources().onFire() : explosion ? level.damageSources().explosion(sp, sp) : level.damageSources().playerAttack(sp);
+		// burning gasoline sets it alight in Minecraft too (fire resistance, and mobs that don't burn, shrug it off)
+		if (fire && !le.fireImmune()) le.setRemainingFireTicks(Math.max(le.getRemainingFireTicks(), 60));
+		le.hurtServer(level, src, amount * (enemy != null || parry ? 10f : V1_HIT));
+		if (enemy != null) {
+			// knocked about by one of ULTRAKILL's enemies: it lands without a fall
+			if (le.isAlive() && !(le instanceof Player)) fling(le);
+			return;
+		}
+		if (parry) {
+			// a parried mob is sent flying
+			Vec3 away = le.position().subtract(sp.position()).multiply(1, 0, 1).normalize();
+			le.push(away.x * 1.6, 0.6, away.z * 1.6);
+			le.hurtMarked = true;
+		}
+		if (!le.isAlive()) {
+			UcNet.send(sp, "KILL " + id);
+			// style pays for Minecraft's mobs too
+			float worth = StyleRewards.kill(sp, le.position().add(0, le.getBbHeight() * 0.5, 0));
+			if (worth > 1f) net.minecraft.world.entity.ExperienceOrb.award(level, le.position(), Math.round(5f * (worth - 1f)) + 2);
+		}
+	}
+
+	// ------------------------------------------------------------------ Minecraft's projectiles and parries
+
+	/** A projectile held still in front of V1 (PHOLD): how it was flying, and whether it had gravity. */
+	private record Held(Vec3 velocity, boolean noGravity) {}
+
+	private static final Map<Integer, Held> HELD = new HashMap<>();
+	/** Projectiles V1 parried: the extra damage they do to what they hit. */
+	private static final Map<Integer, Float> PARRIED = new HashMap<>();
+
+	private static void release(Projectile pr) {
+		Held h = HELD.remove(pr.getId());
+		if (h != null) pr.setNoGravity(h.noGravity);
+		if (HELD.size() > 256) HELD.clear();
+	}
+
+	/** PARRY id dx dy dz: parried with the Feedbacker: the projectile is V1's now and flies back where V1 aimed. */
+	private static void parry(ServerPlayer sp, ServerLevel level, String[] a) {
+		int id = Integer.parseInt(a[1]);
+		Vec3 dir = new Vec3(Double.parseDouble(a[2]), Double.parseDouble(a[3]), Double.parseDouble(a[4])).normalize();
+		if (!(level.getEntity(id) instanceof Projectile pr) || !pr.isAlive()) return;
+		// three times as fast as it came, and the Feedbacker's Return to Sender makes it faster and harder still
+		Held h = HELD.get(id);
+		release(pr);
+		float sender = UkUpgrades.senderMult(UkProgress.get(sp));
+		double came = h != null ? h.velocity.length() : pr.getDeltaMovement().length();
+		double speed = Math.min(6.0, Math.max(came, 1.5) * 3.0 * (0.75 + 0.25 * sender));
+		pr.setOwner(sp);
+		pr.setPos(sp.getEyePosition().add(dir.scale(1.2)));
+		pr.setDeltaMovement(dir.scale(speed));
+		if (pr instanceof AbstractArrow arrow) {
+			arrow.setBaseDamage(((AbstractArrowAccessor) arrow).ultracraft$getBaseDamage() * 3.0 * sender);
+			arrow.pickup = AbstractArrow.Pickup.DISALLOWED;
+		}
+		if (pr instanceof net.minecraft.world.entity.projectile.hurtingprojectile.LargeFireball fb) {
+			var acc = (dev.ultracraft.mixin.LargeFireballAccessor) fb;
+			acc.ultracraft$setExplosionPower(Math.round(Math.max(1, acc.ultracraft$getExplosionPower()) * (1.5f + 0.5f * sender)));
+		}
+		// whatever it hits takes a parry's worth on top of its own damage (see parriedHit)
+		PARRIED.put(id, 8f * sender);
+		pr.hurtMarked = true;
+		syncNow(level, pr);
+	}
+
+	/**
+	 * A projectile moved by hand: everyone sees it there at once. Minecraft sends a flying projectile's position only every
+	 * 10 ticks (fireballs) or 20 (arrows), its velocity at once: a parried one went the right way from where the client
+	 * last had it, behind V1, so it looked like it flew straight through V1 unharmed instead of being sent back.
+	 */
+	private static void syncNow(ServerLevel level, Projectile pr) {
+		level.getChunkSource().sendToTrackingPlayers(pr, ClientboundEntityPositionSyncPacket.of(pr));
+	}
+
+	/** From ProjectileMixin, after any projectile hit something: a parried one hurts it a parry's worth more. */
+	public static void parriedHit(Projectile pr, HitResult hit) {
+		Float bonus = PARRIED.remove(pr.getId());
+		if (PARRIED.size() > 256) PARRIED.clear();
+		if (bonus == null || !(hit instanceof EntityHitResult eh) || !(eh.getEntity() instanceof LivingEntity le) || UcNet.isV1(le) || !le.isAlive()) return;
+		if (!(pr.level() instanceof ServerLevel sl)) return;
+		le.invulnerableTime = 0;
+		le.hurtServer(sl, sl.damageSources().thrown(pr, pr.getOwner()), bonus);
+	}
+
+	// ------------------------------------------------------------------ blasts
+
+	/** A ground slam: ULTRAKILL's 2 damage to every mob (not player) close to where V1 came down. */
+	private static void slamHurt(ServerPlayer sp, ServerLevel level, double x, double y, double z, double radius) {
+		var box = new net.minecraft.world.phys.AABB(x - radius, y - 1.5, z - radius, x + radius, y + 1.0, z + radius);
+		for (LivingEntity le : level.getEntitiesOfClass(LivingEntity.class, box, m -> m.isAlive() && !(m instanceof Player))) {
+			if (le.distanceToSqr(x, le.getY(), z) > radius * radius) continue;
+			le.invulnerableTime = 0;
+			le.hurtServer(level, level.damageSources().playerAttack(sp), 20f);
+			if (!le.isAlive()) {
+				UcNet.send(sp, "KILL " + le.getId());
+				float worth = StyleRewards.kill(sp, le.position().add(0, le.getBbHeight() * 0.5, 0));
+				if (worth > 1f) net.minecraft.world.entity.ExperienceOrb.award(level, le.position(), Math.round(5f * (worth - 1f)) + 2);
+			}
+		}
+	}
+
+	/** ULTRAKILL blasts break blocks and push mobs, but never hurt anything twice or shove a V1. */
+	private static final ExplosionDamageCalculator V1_BLAST = new ExplosionDamageCalculator() {
+		@Override
+		public boolean shouldDamageEntity(Explosion explosion, Entity entity) {
+			return false;
+		}
+
+		@Override
+		public float getKnockbackMultiplier(Entity entity) {
+			return entity instanceof Player ? 0f : 1f;
+		}
+	};
+	/** A slam crater (or the nuke) hurts every mob in it, but never a player. */
+	private static final ExplosionDamageCalculator V1_SLAM = new ExplosionDamageCalculator() {
+		@Override
+		public boolean shouldDamageEntity(Explosion explosion, Entity entity) {
+			return !(entity instanceof Player);
+		}
+
+		@Override
+		public float getKnockbackMultiplier(Entity entity) {
+			return entity instanceof Player ? 0f : 1f;
+		}
+	};
+	private static final WeightedList<ExplosionParticleInfo> BLAST_DEBRIS = WeightedList.<ExplosionParticleInfo>builder()
+		.add(new ExplosionParticleInfo(ParticleTypes.POOF, 0.5F, 1.0F))
+		.add(new ExplosionParticleInfo(ParticleTypes.SMOKE, 1.0F, 1.0F))
+		.build();
+	/** ULTRAKILL already plays its own explosion sound. */
+	private static final Holder<SoundEvent> SILENT = Holder.direct(SoundEvents.EMPTY);
+
+	static String format(String f, Object... args) {
+		return String.format(Locale.ROOT, f, args);
+	}
+}

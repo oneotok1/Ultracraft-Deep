@@ -1,0 +1,1 @@
+- **Boss music waits for the entrance.** With Boss Intros on, the boss's song no longer plays under its speech. It stays silent through the entrance and starts from the top on the last word ("...HERE AND NOW!"), swelling in over a moment. Your own songs (Your Music) kick in a little sooner, as "AND" leads into "NOW!".

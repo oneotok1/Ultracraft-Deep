@@ -1,0 +1,8 @@
+{
+  "type": "ultracraft:arena",
+  "biomes": "#ultracraft:has_structure/arena_limbo",
+  "step": "surface_structures",
+  "spawn_overrides": {},
+  "terrain_adaptation": "none",
+  "layer": "limbo"
+}

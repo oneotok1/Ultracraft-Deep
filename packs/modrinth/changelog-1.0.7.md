@@ -1,0 +1,4 @@
+- **Time to grab the loot.** After you beat a boss in its arena, you stay for 20 seconds (with a countdown) before you're taken back.
+- **Gabriel's pillar of light** no longer goes down through the floor.
+- **No more doubled bosses.** A boss's model is put back exactly as it was after its entrance (Gabriel, Apostate has two rigs, and both could show). The Swordsmachine's sword trail no longer streaks down from the sky as it drops in.
+- **Boss music timing.** For one-line entrances ("BEHOLD! THE POWER OF AN ANGEL") the music starts once the line is said.
