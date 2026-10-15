@@ -18,6 +18,7 @@ import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3fc;
@@ -27,6 +28,7 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
@@ -206,7 +208,12 @@ public final class WorldMesh {
 						m.set(bx + x, by + y, bz + z);
 						BlockState s = inside ? sec.getBlockState(x, y, z) : level.getBlockState(m);
 						if (s.isAir()) continue;
-						if (s.isCollisionShapeFullBlock(level, m)) {
+						boolean fullCube = s.isCollisionShapeFullBlock(level, m);
+						// A block Minecraft draws as a whole cube merges like one even when its collision is shorter: soul sand,
+						// mud, farmland and concrete powder have a full-block model over a 14/16 box, and taking them for partial
+						// shapes cost a soul sand valley a dozen records per block (six loose model quads, six collision faces)
+						// and stopped their neighbours' faces from merging. Their short collision still goes out as boxes below.
+						if (fullCube || Block.isShapeFullBlock(s.getVisualShape(level, m, CollisionContext.empty()))) {
 							full[idx(x, y, z)] = true;
 							CutoutTextures.Kind kind = CutoutTextures.kind(s);
 							if (kind == CutoutTextures.Kind.SEE_THROUGH) look[idx(x, y, z)] = 1;
@@ -215,16 +222,13 @@ public final class WorldMesh {
 								look[idx(x, y, z)] = (byte) (tex >= 0 && tex < 120 ? 2 + tex : 1);
 								cullSame[idx(x, y, z)] = !s.is(BlockTags.LEAVES);
 							}
+							if (inside && !fullCube) faces += boxes(sb, level, s, m, x, y, z, bx, by, bz);
 						} else if (inside) {
 							// grass, flowers, crops, vines, torches, doors...: their model's own quads, drawn with holes
 							faces += plant(sb, level, s, m, bx, by, bz);
 							// fences, walls, stairs, panes, lanterns...: their model hides what's behind it
 							faces += solid(sb, s, m, bx, by, bz);
-							VoxelShape shape = s.getCollisionShape(level, m);
-							if (!shape.isEmpty()) {
-								int off = s.canOcclude() ? 0 : 6;
-								for (AABB b : shape.toAabbs()) faces += box(sb, off, bx + x + b.minX, by + y + b.minY, bz + z + b.minZ, bx + x + b.maxX, by + y + b.maxY, bz + z + b.maxZ);
-							}
+							faces += boxes(sb, level, s, m, x, y, z, bx, by, bz);
 						}
 					}
 				}
@@ -421,6 +425,16 @@ public final class WorldMesh {
 		face(sb, off + 4, z1, x0, y0, x1, y1);
 		face(sb, off + 5, z0, x0, y0, x1, y1);
 		return 6;
+	}
+
+	/** Every collision box of one block, six faces each; off = 6 for see-through blocks. */
+	private static int boxes(StringBuilder sb, ClientLevel level, BlockState s, BlockPos pos, int x, int y, int z, int bx, int by, int bz) {
+		VoxelShape shape = s.getCollisionShape(level, pos);
+		if (shape.isEmpty()) return 0;
+		int off = s.canOcclude() ? 0 : 6;
+		int n = 0;
+		for (AABB b : shape.toAabbs()) n += box(sb, off, bx + x + b.minX, by + y + b.minY, bz + z + b.minZ, bx + x + b.maxX, by + y + b.maxY, bz + z + b.maxZ);
+		return n;
 	}
 
 	private static void face(StringBuilder sb, int d, double p, double a0, double b0, double a1, double b1) {
