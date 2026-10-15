@@ -495,7 +495,12 @@ public final class ServerOps {
 			: fire ? level.damageSources().onFire() : explosion ? level.damageSources().explosion(sp, sp) : level.damageSources().playerAttack(sp);
 		// burning gasoline sets it alight in Minecraft too (fire resistance, and mobs that don't burn, shrug it off)
 		if (fire && !le.fireImmune()) le.setRemainingFireTicks(Math.max(le.getRemainingFireTicks(), 60));
-		le.hurtServer(level, src, amount * (enemy != null || parry ? 10f : V1_HIT));
+		// ULTRAKILL's enemies hitting a mob keep 10 (SwingCheck2 sent them the swing's damage/10); a hit on V1
+		// carries the swing's own damage instead, and V1Damage turns that back into ULTRAKILL HP at 5 per point.
+		// Scaling by 10 here as well is what took a full-health V1 from 100 to 0 in one ordinary swing.
+		float scale = enemy != null && le instanceof ServerPlayer v1 && UcNet.isV1(v1) ? 2f
+			: (enemy != null || parry ? 10f : V1_HIT);
+		le.hurtServer(level, src, amount * scale);
 		if (enemy != null) {
 			// knocked about by one of ULTRAKILL's enemies: it lands without a fall
 			if (le.isAlive() && !(le instanceof Player)) fling(le);

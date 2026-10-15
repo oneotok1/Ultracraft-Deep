@@ -2459,7 +2459,9 @@ namespace UltraBridge
         bool navDirty = true, navBaking;
         float nextNavBake, navStarted;
         // (wide enough that enemies coming from afar have ground to walk on before they reach V1)
-        const float NavRadiusBlocks = 56f, NavHeightBlocks = 56f;
+        // Terrains with more solid blocks in the box (the Nether above all) cost proportionally more to bake, so
+        // this is kept to what the enemies actually use: they spawn around V1 and are warped back on (SettleAgents).
+        const float NavRadiusBlocks = 40f, NavHeightBlocks = 56f;
 
         void MarkNavDirty(Bounds changed)
         {
@@ -2485,7 +2487,9 @@ namespace UltraBridge
         void BakeNavMesh(Vector3 center)
         {
             navDirty = false;
-            nextNavBake = Time.unscaledTime + 1.5f;
+            // every bake costs a main-thread stall while the builds complete: 1.5 s of spacing made that a
+            // constant stutter rather than the occasional one it is meant to be
+            nextNavBake = Time.unscaledTime + 4f;
             navCenter = center;
             if (navSettings.Count == 0)
             {
