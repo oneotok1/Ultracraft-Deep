@@ -273,6 +273,7 @@ namespace UltraBridge
         GameObject sectionRoot;
         readonly Dictionary<string, GameObject> sections = new Dictionary<string, GameObject>();
         readonly Queue<string> sectionQueue = new Queue<string>();
+        float sectionMs = 2f;
 
         // ULTRAKILL menus (the Spawner Arm's spawn menu, alter menu) free the cursor; Minecraft then shows its own
         // cursor and sends where it is
@@ -717,6 +718,8 @@ namespace UltraBridge
                     if (levelPrepared && proxies.TryGetValue(int.Parse(rest), out var p) && p != null)
                     {
                         MonoSingleton<StyleHUD>.Instance?.AddPoints(50, "ultrakill.kill", null, p.eid);
+                        // a Minecraft kill also counts toward the combo, which its own death never touches
+                        AddMultiKill();
                     }
                     break;
                 }
@@ -1127,7 +1130,18 @@ namespace UltraBridge
         {
             if (!levelPrepared || !originSet || sectionRoot == null) return;
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            while (sectionQueue.Count > 0 && sw.ElapsedMilliseconds < 4) BuildSection(sectionQueue.Dequeue());
+            // Testing the budget only before a build starts the last one at 3.9 ms and lets it overrun the frame;
+            // testing it against what the next build is expected to cost avoids that. Building one section
+            // regardless keeps the queue moving even if that estimate is stale.
+            int built = 0;
+            while (sectionQueue.Count > 0)
+            {
+                if (built > 0 && sw.ElapsedMilliseconds + sectionMs >= 4) break;
+                var t = System.Diagnostics.Stopwatch.StartNew();
+                BuildSection(sectionQueue.Dequeue());
+                sectionMs = Mathf.Clamp(sectionMs * 0.7f + (float)t.Elapsed.TotalMilliseconds * 0.3f, 0.25f, 3f);
+                built++;
+            }
         }
 
         /// <summary>SEC sx sy sz face;face;... where face = d,plane,a0,b0,a1,b1[,tex] in Minecraft coordinates:
@@ -2027,6 +2041,10 @@ namespace UltraBridge
         // window as a whole stays fair
         // (the Feedbacker's Reflex upgrade adds to both)
         static float ParryWindow => 0.2f + ReflexBonus * 0.5f;
+        // How far from a mob V1 can be when its swing window closes and still be hit. A mob swings from arm's
+        // length, so this is that reach plus a step: far enough that standing still or strafing around is no dodge,
+        // close enough that walking away is. Refused from further out - the swing simply misses.
+        const float MeleeReach = 5f;
         static float EarlyParry => 0.4f + ReflexBonus * 0.5f;
         // a projectile that reaches V1 hangs in front of it this long before it hits, so any of Minecraft's projectiles
         // (even a fast arrow) can be parried; a Feedbacker punch up to EarlyParry before it arrives parries it too
@@ -2218,6 +2236,14 @@ namespace UltraBridge
                 if (p == null || p.pendingHurt <= 0 || Time.time < p.parryUntil) continue;
                 int d = p.pendingHurt;
                 p.pendingHurt = 0;
+                // The flash is the warning that this swing can be parried; whether it lands is still up to where V1
+                // is when the window closes. Backing away from it is a dodge, so the hit is dropped rather than
+                // granted on the strength of a decision Minecraft made 0.2 s ago and V1 has since walked out of.
+                if (p.center != null && Vector3.Distance(p.center.position, nm.transform.position) > MeleeReach)
+                {
+                    p.hasPendingKnock = false;
+                    continue;
+                }
                 if (!nm.dead) nm.GetHurt(d, true);
                 // the swing landed: so does its knockback
                 if (p.hasPendingKnock && !nm.dead) Knock(nm, p.pendingKnock, p.pendingKnockUp);

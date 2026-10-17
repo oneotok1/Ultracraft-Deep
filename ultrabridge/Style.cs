@@ -24,5 +24,20 @@ namespace UltraBridge
             rankSent = rank;
             Net.Send("STYLE " + rank);
         }
+
+        /// <summary>
+        /// Count a Minecraft kill toward ULTRAKILL's multikill combo. Vanilla does that at the tail of
+        /// StyleCalculator.HitCalculator, which only runs for ULTRAKILL's own enemies; a Minecraft mob dies in
+        /// Minecraft, so its kill never reaches that tail and two mobs dying together never read as a double kill.
+        /// </summary>
+        void AddMultiKill()
+        {
+            try
+            {
+                var calc = MonoSingleton<StyleCalculator>.Instance;
+                if (calc != null) calc.AddToMultiKill(null);
+            }
+            catch (Exception) { }
+        }
     }
 }

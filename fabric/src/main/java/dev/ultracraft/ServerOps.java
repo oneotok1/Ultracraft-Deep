@@ -54,6 +54,9 @@ public final class ServerOps {
 
 	private static final Map<UUID, State> STATES = new HashMap<>();
 	private static int ticks;
+	/** How long a mob stays without goals after the reel lets go of it. Long enough to land and be looked at,
+	 * short enough that it is a stagger rather than a stun. */
+	private static final int STAGGER_TICKS = 25;
 
 	private ServerOps() {}
 
@@ -81,6 +84,16 @@ public final class ServerOps {
 
 	/** Mobs ULTRAKILL's enemies sent flying, and the tick they were: no fall damage for them until they land. */
 	private static final Map<LivingEntity, Integer> FLUNG = new HashMap<>();
+	/** Mobs V1 is reeling in, which V1 holds each and since when: while it holds one, the mob does nothing of its own.
+	 * ULTRAKILL's reel leaves a light enemy no way to act (its ground check is off and its speed is rewritten every
+	 * frame), so a reeled-in mob stops walking, jumping and steering instead of fighting the pull. */
+	private record Whip(ServerPlayer v1, int at, boolean noGravity) {}
+
+	private static final Map<LivingEntity, Whip> WHIPPED = new HashMap<>();
+	/** Mobs the hook has let go of, and the tick their AI comes back: a reeled-in mob is dropped right in V1's face,
+	 * so handing its goals back on the let-go tick makes it swing at V1 the instant it lands. ULTRAKILL's own reel
+	 * leaves its enemy reeling for a moment after the pull ends, and that is what this grace period reproduces. */
+	private static final Map<LivingEntity, Integer> RELEASED_WHIP = new HashMap<>();
 	/** Players just in, and the tick their join is dealt with: not while their client is still loading the world. */
 	private static final Map<UUID, Integer> justJoined = new HashMap<>();
 
@@ -98,6 +111,89 @@ public final class ServerOps {
 			int age = ticks - en.getValue();
 			return (age > 5 && le.onGround()) || le.isInWater() || age > 600;
 		});
+	}
+
+	/** Let go of a mob V1 was reeling in: it stands where the reel left it and its weight comes back. */
+	private static void releaseWhip(LivingEntity le) {
+		stopWhip(le);
+	}
+
+	/** Whip a held mob toward V1 at ULTRAKILL's 60 units a second, and only that: the reel is its whole motion, so it
+	 * does not also fall or coast. One message holds it; the aiming is done here, each tick, from where V1 is. */
+	private static void landWhipped() {
+		if (WHIPPED.isEmpty()) return;
+		WHIPPED.entrySet().removeIf(en -> {
+			LivingEntity le = en.getKey();
+			if (le.isRemoved() || !le.isAlive()) return true;
+			Whip w = en.getValue();
+			ServerPlayer v1 = w.v1();
+			if (v1 == null || v1.isRemoved() || !v1.isAlive() || ticks - w.at() > 100) {
+				halt(le, w);
+				RELEASED_WHIP.put(le, ticks + STAGGER_TICKS);
+				return true;
+			}
+			// it does not steer while it is reeled in; only its own AI is suppressed, its movement is not. Cleared
+			// every tick because the goal selectors can pick a new target the moment the old one is dropped.
+			if (le instanceof net.minecraft.world.entity.Mob mob) {
+				mob.getNavigation().stop();
+				mob.setTarget(null);
+			}
+			// any hit taken mid-reel starts the 20-tick hurt flash again; ULTRAKILL has no such frames
+			le.invulnerableTime = 0;
+			Vec3 to = v1.getEyePosition();
+			Vec3 from = le.position().add(0, le.getBbHeight() * 0.5, 0);
+			Vec3 dir = to.subtract(from);
+			double len = dir.length();
+			// no arrival test here: whether the mob is close enough to let go is the hook's call, and ULTRAKILL decides
+			// it off the stand-in it can see. Two thresholds a few centimetres apart argued, and the late one let the
+			// mob float into V1 before either fired. This one is only a backstop for a release that never arrives -
+			// far inside the hook's own distance, so it cannot fire first and start arguing again.
+			if (len < 0.3) {
+				halt(le, w);
+				RELEASED_WHIP.put(le, ticks + STAGGER_TICKS);
+				return true;
+			}
+			// 60 units a second, in blocks a tick (ULTRAKILL's unit is 3.5/1.8 of a block)
+			double speed = Math.min(3.0, 60.0 / (3.5 / 1.8) / 20.0);
+			// never overshoot V1: a mob further out than one tick of travel closes the gap exactly and stops on the
+			// next tick, instead of sailing past and being pulled back from the far side. Half of what is left as
+			// well, so the last stride in cannot carry it past the hook's own release distance in one tick - at a
+			// full stride it crossed that distance between two ticks and the hook let go only after the bodies met.
+			double step = Math.min(speed, len * 0.5);
+			Vec3 v = dir.scale(step / len);
+			le.setDeltaMovement(v.x, v.y, v.z);
+			le.fallDistance = 0;
+			le.hurtMarked = true;
+			return false;
+		});
+	}
+
+	/** True while the hook has this mob, and so while MobAiMixin keeps its AI switched off: a reeled mob decides
+	 * nothing, the way ULTRAKILL's reel leaves its enemies helpless. A mob just let go of counts as reeled for a
+	 * moment longer, or it would swing at V1 on the very tick it was dropped in front of him. */
+	public static boolean isWhipped(LivingEntity le) {
+		if (WHIPPED.containsKey(le)) return true;
+		Integer until = RELEASED_WHIP.get(le);
+		return until != null && ticks < until;
+	}
+
+	/** Stop reeling a mob: it stands where the reel left it, with its weight back. The speed is cleared as well, or it
+	 * carries the last tick's reel and keeps going in the direction it was being pulled. Its goals stay off for a
+	 * short grace period - see RELEASED_WHIP. */
+	private static void stopWhip(LivingEntity le) {
+		Whip w = WHIPPED.remove(le);
+		if (w == null) return;
+		halt(le, w);
+		RELEASED_WHIP.put(le, ticks + STAGGER_TICKS);
+	}
+
+	/** The reversing half of stopWhip, for the callers that are already walking WHIPPED and must not touch it: which
+	 * entry is dropped is their business (removeIf), the mob's state is restored here. */
+	private static void halt(LivingEntity le, Whip w) {
+		le.setNoGravity(w.noGravity());
+		le.setDeltaMovement(Vec3.ZERO);
+		le.hurtMarked = true;
+		le.fallDistance = 0;
 	}
 
 	/** A player joined: dealt with a second from now, once their client has the world (joining is what puts a
@@ -121,6 +217,8 @@ public final class ServerOps {
 			return true;
 		});
 		landFlung();
+		landWhipped();
+		if (!RELEASED_WHIP.isEmpty()) RELEASED_WHIP.entrySet().removeIf(en -> ticks >= en.getValue() || en.getKey().isRemoved());
 		if (ticks % 10 == 0) guard("boss party", () -> BossParty.tick(server));
 		guard("duels", () -> Duels.tick(server));
 		for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
@@ -346,11 +444,30 @@ public final class ServerOps {
 				}
 			}
 			case "WHIP" -> {
-				// WHIP id vx vy vz: V1's Whiplash reels this mob in (its speed in blocks a tick)
+				// WHIP id held: the reel is running - the mob loses its AI and is pulled to V1 until told otherwise
+				// WHIP id: let go
 				if (level.getEntity(Integer.parseInt(a[1])) instanceof LivingEntity le && le.isAlive() && !UcNet.isV1(le)) {
-					le.setDeltaMovement(Double.parseDouble(a[2]), Double.parseDouble(a[3]), Double.parseDouble(a[4]));
+					boolean held = a.length > 2 && a[2].equals("held");
+					if (held) {
+						// the reel is the whole of its motion: ULTRAKILL pulls a light enemy with nothing else acting
+						// on it, so its own gravity is taken away for the hold and put back on release
+						if (le instanceof net.minecraft.world.entity.Mob mob) {
+							mob.getNavigation().stop();
+							mob.setTarget(null);
+						}
+						// every resend of the hold is also its heartbeat: the timeout below measures from the last one,
+						// so a reel that takes longer than a few seconds is not mistaken for a lost hook. The saved
+						// gravity is only read on the first one, while the mob still has its own.
+						Whip prev = WHIPPED.get(le);
+						WHIPPED.put(le, new Whip(sp, ticks, prev != null ? prev.noGravity() : le.isNoGravity()));
+						le.setNoGravity(true);
+						// the hook's own 0.2 damage starts Minecraft's 20-tick hurt flash on it; ULTRAKILL has no such
+						// frames, and a reeled mob should not be flashing through the whole pull
+						le.invulnerableTime = 0;
+					} else {
+						releaseWhip(le);
+					}
 					le.fallDistance = 0;
-					le.hurtMarked = true;
 				}
 			}
 			case "PIMPACT" -> {

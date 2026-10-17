@@ -212,7 +212,7 @@ public final class WorldMesh {
 						// A block Minecraft draws as a whole cube merges like one even when its collision is shorter: soul sand,
 						// mud, farmland and concrete powder have a full-block model over a 14/16 box, and taking them for partial
 						// shapes cost a soul sand valley a dozen records per block (six loose model quads, six collision faces)
-						// and stopped their neighbours' faces from merging. Their short collision still goes out as boxes below.
+						// and stopped their neighbours' faces from merging.
 						if (fullCube || Block.isShapeFullBlock(s.getVisualShape(level, m, CollisionContext.empty()))) {
 							full[idx(x, y, z)] = true;
 							CutoutTextures.Kind kind = CutoutTextures.kind(s);
@@ -222,7 +222,9 @@ public final class WorldMesh {
 								look[idx(x, y, z)] = (byte) (tex >= 0 && tex < 120 ? 2 + tex : 1);
 								cullSame[idx(x, y, z)] = !s.is(BlockTags.LEAVES);
 							}
-							if (inside && !fullCube) faces += boxes(sb, level, s, m, x, y, z, bx, by, bz);
+							// Such a block's short collision box lies inside the cube just merged above, so its six
+							// faces would be interior geometry nobody sees - and soul sand, mud and farmland cover
+							// whole floors, which cost a valley thousands of records a section.
 						} else if (inside) {
 							// grass, flowers, crops, vines, torches, doors...: their model's own quads, drawn with holes
 							faces += plant(sb, level, s, m, bx, by, bz);

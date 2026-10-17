@@ -19,15 +19,18 @@
   ],
   "mixins": [
     "AbstractArrowAccessor",
+    "EntityTouchMixin",
     "LargeFireballAccessor",
     "LivingEntityMixin",
     "MobAccessor",
+    "MobAiMixin",
     "PlayerMixin",
     "PrimaryLevelDataMixin",
     "ProjectileMixin",
     "ServerGamePacketListenerImplMixin",
     "ServerLevelMixin",
     "ServerPlayerMixin",
+    "SlimeStunMixin",
     "TridentItemMixin"
   ],
   "injectors": {
