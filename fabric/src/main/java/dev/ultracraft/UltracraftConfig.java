@@ -56,6 +56,11 @@ public final class UltracraftConfig {
 	public static boolean playerBlockDamage = true;
 	/** ULTRAKILL's enemies (their shots, beams, blasts and fire) break blocks. */
 	public static boolean enemyBlockDamage = true;
+	/**
+	 * V1's blasts put fire out: an explosion clears the fire it lands in and the fire it would have started. Fire is a
+	 * block, but it is not one the "Breaks Blocks" settings reach either way, so this works with them off.
+	 */
+	public static boolean blastFireOut = false;
 	/** How long ULTRAKILL's impact frames (hitstop) last, 0.1x to 3x. */
 	public static float impactFrames = 1f;
 	/** Starting Minecraft starts ULTRAKILL too (through Steam), and closing Minecraft closes it. */
@@ -127,7 +132,7 @@ public final class UltracraftConfig {
 	public static final Map<String, String> bossSets = new TreeMap<>();
 
 	private static final String[] KEYS = {"v1Height", "autoV1", "ukSpawns", "mcMobs", "sharpShop", "grindBest", "bosses", "bossMinutes", "bossDifficulty", "traitChance", "bossWarnSeconds", "bossIntros", "bossDeaths", "bossArenas",
-		"allGear", "playerBlockDamage", "enemyBlockDamage", "impactFrames", "launchUltrakill", "opShop", "ukFpsCap", "steveEnemies", "fightMusic", "bossThemes",
+		"allGear", "playerBlockDamage", "enemyBlockDamage", "blastFireOut", "impactFrames", "launchUltrakill", "opShop", "ukFpsCap", "steveEnemies", "fightMusic", "bossThemes",
 		"calmMusic", "hushMcMusic", "styleRewards", "arenas", "grindArenas", "lockStep", "lowLatency",
 		"effects", "stainCap", "extraGore", "terrainRange", "ultrakillDir", "setupUltrakill", "teammateMarkers"};
 
@@ -135,7 +140,7 @@ public final class UltracraftConfig {
 		+ " autoV1 = become V1 automatically; ukSpawns = ULTRAKILL's enemies spawn in the dark; mcMobs = Minecraft's monsters spawn;"
 		+ " sharpShop = full resolution at a shop's screen; grindBest = best Cyber Grind wave; bosses = ULTRAKILL's bosses come now and then;"
 		+ " bossMinutes = minutes of play between them; bossDifficulty = 0 by bosses beaten, 1-5 EASY to V1 MUST DIE; traitChance = percent of bosses with traits; bossWarnSeconds = warning before one arrives; allGear = every weapon without buying it;"
-		+ " playerBlockDamage / enemyBlockDamage = V1's / enemies' attacks break blocks; impactFrames = hitstop length (0.1 to 3);"
+		+ " playerBlockDamage / enemyBlockDamage = V1's / enemies' attacks break blocks; blastFireOut = V1's blasts put fire out; impactFrames = hitstop length (0.1 to 3);"
 		+ " launchUltrakill = start ULTRAKILL with Minecraft; opShop = upgrades go to 1500%; uk.* = ULTRAKILL settings used while playing Ultracraft;"
 		+ " fightMusic = off, random or a song of ULTRAKILL's soundtrack; cheat.* = cheats on; arenas = ULTRAKILL arenas generate in new chunks; grindArenas = the Cyber Grind runs through its own 50 arenas; lockStep = Minecraft waits for ULTRAKILL's frames;"
 		+ " effects = 2 high, 1 medium, 0 low; stainCap = blood stains kept on blocks (0 none); extraGore = Ultracraft's extra death blood; terrainRange = blocks of terrain sent to ULTRAKILL (64-128);"
@@ -194,6 +199,7 @@ public final class UltracraftConfig {
 			allGear = bool(p, "allGear", allGear);
 			playerBlockDamage = bool(p, "playerBlockDamage", playerBlockDamage);
 			enemyBlockDamage = bool(p, "enemyBlockDamage", enemyBlockDamage);
+			blastFireOut = bool(p, "blastFireOut", blastFireOut);
 			impactFrames = Math.max(0.1f, Math.min(3f, Float.parseFloat(p.getProperty("impactFrames", Float.toString(impactFrames)).trim())));
 			launchUltrakill = bool(p, "launchUltrakill", launchUltrakill);
 			opShop = bool(p, "opShop", opShop);
@@ -261,6 +267,7 @@ public final class UltracraftConfig {
 		p.setProperty("allGear", Boolean.toString(allGear));
 		p.setProperty("playerBlockDamage", Boolean.toString(playerBlockDamage));
 		p.setProperty("enemyBlockDamage", Boolean.toString(enemyBlockDamage));
+		p.setProperty("blastFireOut", Boolean.toString(blastFireOut));
 		p.setProperty("impactFrames", String.format(Locale.ROOT, "%.1f", impactFrames));
 		p.setProperty("launchUltrakill", Boolean.toString(launchUltrakill));
 		p.setProperty("opShop", Boolean.toString(opShop));

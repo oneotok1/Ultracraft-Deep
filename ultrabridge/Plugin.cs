@@ -2889,20 +2889,26 @@ namespace UltraBridge
         Vector3 lastBoomPos;
         float lastBoomSize;
 
-        /// <summary>enemy: an enemy's blast (Minecraft's "Enemies Break Blocks" setting decides about the blocks).</summary>
-        public void ReportExplosion(Vector3 pos, float radius, bool big = false, bool nuke = false, bool enemy = false)
+        /// <summary>enemy: an enemy's blast (Minecraft's "Enemies Break Blocks" setting decides about the blocks).
+        /// fireOnly: a blast that leaves the blocks alone but still puts the fire out - one that deals no damage (a
+        /// Freezeframe rocket's) or one that goes off right where V1 stands (the Knuckleblaster's shockwave,
+        /// Counterblast, Seismic, Ripcord).</summary>
+        public void ReportExplosion(Vector3 pos, float radius, bool big = false, bool nuke = false, bool enemy = false, bool fireOnly = false)
         {
             if (!levelPrepared || !originSet || !Net.Connected || radius <= 0f) return;
             // one blast is often several Explosion spheres at the same spot; keep the biggest (a nuke's spheres all
-            // count as the one nuke)
+            // count as the one nuke). A fire-only blast and a block-breaking one are different reports of the same
+            // shot, so neither may swallow the other
             bool same = Time.time - lastBoomTime < 0.1f && Vector3.Distance(pos, lastBoomPos) < 2f;
-            if (same && (lastBoomNuke || (!nuke && radius <= lastBoomSize))) return;
+            if (same && lastBoomFire == fireOnly && (lastBoomNuke || (!nuke && radius <= lastBoomSize))) return;
             lastBoomTime = Time.time;
             lastBoomPos = pos;
             lastBoomSize = radius;
             lastBoomNuke = nuke;
+            lastBoomFire = fireOnly;
             var m = UkToMc(pos);
-            SendBoom("BOOM " + S(m.x) + " " + S(m.y) + " " + S(m.z) + " " + S(radius / K) + (nuke ? " 2" : big ? " 1" : enemy ? " e" : ""));
+            SendBoom("BOOM " + S(m.x) + " " + S(m.y) + " " + S(m.z) + " " + S(radius / K)
+                     + (fireOnly ? " f" : nuke ? " 2" : big ? " 1" : enemy ? " e" : ""));
         }
 
         readonly List<string> heldBooms = new List<string>();
@@ -2923,6 +2929,7 @@ namespace UltraBridge
         }
 
         bool lastBoomNuke;
+        bool lastBoomFire;
 
         object lastTunnelSource;
 
@@ -3833,9 +3840,16 @@ namespace UltraBridge
     {
         static void Postfix(Explosion __instance)
         {
-            if (__instance.harmless || __instance.damage <= 0) return;
-            // a blast right where V1 stands (Counterblast, Seismic, Ripcord) leaves the blocks be
-            if (__instance.GetComponentInParent<NoCrater>() != null) return;
+            bool enemy = __instance.enemy && __instance.sourceWeapon == null;
+            // a blast that leaves the blocks be still puts the fire out: one that deals no damage (a Freezeframe
+            // rocket's), and one that goes off right where V1 stands (the Knuckleblaster's shockwave, Counterblast,
+            // Seismic, Ripcord), which never makes a crater
+            if (__instance.harmless || __instance.damage <= 0 || __instance.GetComponentInParent<NoCrater>() != null)
+            {
+                // an enemy's blasts leave the fire alone, the same way they leave the blocks alone
+                if (!enemy) Bridge.I?.ReportExplosion(__instance.transform.position, __instance.maxSize, false, false, false, true);
+                return;
+            }
             // the "mini nuke" (a rocket or core shot with a railcannon, a charged Malicious beam through a projectile)
             if (Bridge.IsNuke(__instance))
             {
@@ -3844,7 +3858,6 @@ namespace UltraBridge
             }
             // the Malicious railcannon's blast tears out twice as much
             bool rail = __instance.sourceWeapon != null && __instance.sourceWeapon.GetComponent<Railcannon>() != null;
-            bool enemy = __instance.enemy && __instance.sourceWeapon == null;
             Bridge.I?.ReportExplosion(__instance.transform.position, __instance.maxSize * (rail ? 2f : 1f), rail, false, enemy);
         }
     }

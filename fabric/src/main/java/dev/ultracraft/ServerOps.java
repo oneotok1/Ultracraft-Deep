@@ -17,6 +17,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.util.Mth;
 import net.minecraft.util.random.WeightedList;
 import net.minecraft.world.entity.Entity;
@@ -67,6 +68,20 @@ public final class ServerOps {
 	static boolean breaks(Level level, boolean enemy) {
 		if (level.dimension() == GrindArenas.DIMENSION) return false;
 		return enemy ? UltracraftConfig.enemyBlockDamage : UltracraftConfig.playerBlockDamage;
+	}
+
+	/**
+	 * A blast of V1's puts out the fire around it: the flames it lands on, and the ones it would have started. Fire is
+	 * a block, but neither "Breaks Blocks" setting has anything to do with it, so this works with them off, and in the
+	 * Cyber Grind's arenas (which no blast may touch otherwise). The nuke's fire is huge, hence the cap on the reach.
+	 */
+	private static void putOut(ServerLevel level, double x, double y, double z, float power) {
+		if (!UltracraftConfig.blastFireOut) return;
+		BlockPos center = BlockPos.containing(x, y, z);
+		int r = Mth.clamp(Mth.ceil(power), 1, 24);
+		for (BlockPos p : BlockPos.betweenClosed(center.offset(-r, -r, -r), center.offset(r, r, r))) {
+			if (level.getBlockState(p).is(BlockTags.FIRE)) level.removeBlock(p, false);
+		}
 	}
 
 	static State state(ServerPlayer sp) {
@@ -375,9 +390,14 @@ public final class ServerOps {
 				double x = Double.parseDouble(a[1]), y = Double.parseDouble(a[2]), z = Double.parseDouble(a[3]);
 				float power = Math.min(16f, Float.parseFloat(a[4]) / 12.5f);
 				slamHurt(sp, level, x, y, z, 1.5 + Math.max(0f, power) * 0.4);
+				// the landing puts fire out even when it is too short a fall to leave a crater
+				putOut(level, x, y - 0.5, z, Math.max(1f, power));
 				if (power < 1f) return;
-				Level.ExplosionInteraction blocks = breaks(level, false) ? Level.ExplosionInteraction.TNT : Level.ExplosionInteraction.NONE;
-				level.explode(sp, null, V1_BLAST, x, y - 0.5, z, power, false, blocks, ParticleTypes.EXPLOSION, ParticleTypes.EXPLOSION_EMITTER, BLAST_DEBRIS, SoundEvents.GENERIC_EXPLODE);
+				// the sound, the smoke and the shove are Minecraft's own explosion; the crater is BlockDamage.blast's ball
+				level.explode(sp, null, V1_BLAST, x, y - 0.5, z, power, false, Level.ExplosionInteraction.NONE, ParticleTypes.EXPLOSION,
+					ParticleTypes.EXPLOSION_EMITTER, BLAST_DEBRIS, SoundEvents.GENERIC_EXPLODE);
+				if (breaks(level, false)) BlockDamage.blast(level, sp, x, y - 0.5, z, power, false);
+				putOut(level, x, y - 0.5, z, power);
 			}
 			case "RAIL" -> {
 				// RAIL x y z dx dy dz length radius: the Electric railcannon bores through the terrain
@@ -392,17 +412,30 @@ public final class ServerOps {
 				double x = Double.parseDouble(a[1]), y = Double.parseDouble(a[2]), z = Double.parseDouble(a[3]);
 				String kind = a.length > 5 ? a[5] : "";
 				float size = Float.parseFloat(a[4]);
-				Level.ExplosionInteraction blocks = breaks(level, kind.equals("e")) ? Level.ExplosionInteraction.TNT : Level.ExplosionInteraction.NONE;
+				if (kind.equals("f")) {
+					// a blast that leaves the blocks alone (one that deals no damage, a Freezeframe rocket's, or one
+					// right where V1 stands, the Knuckleblaster's shockwave): it puts the fire out and nothing else
+					putOut(level, x, y, z, Math.max(1f, Math.min(UltracraftConfig.opShop ? 32f : 10f, size)));
+					return;
+				}
 				if (kind.equals("2")) {
 					// the mini nuke: a burning crater twice anything else's size, hurting every mob caught in it
 					float power = Math.max(18f, Math.min(UltracraftConfig.opShop ? 48f : 24f, size * 2f));
-					level.explode(sp, null, V1_SLAM, x, y, z, power, blocks != Level.ExplosionInteraction.NONE, blocks, ParticleTypes.EXPLOSION,
-						ParticleTypes.EXPLOSION_EMITTER, BLAST_DEBRIS, SoundEvents.GENERIC_EXPLODE);
+					level.explode(sp, null, V1_SLAM, x, y, z, power, false, Level.ExplosionInteraction.NONE,
+						ParticleTypes.EXPLOSION, ParticleTypes.EXPLOSION_EMITTER, BLAST_DEBRIS, SoundEvents.GENERIC_EXPLODE);
+					if (breaks(level, kind.equals("e"))) BlockDamage.blast(level, sp, x, y, z, power, !UltracraftConfig.blastFireOut);
+					putOut(level, x, y, z, power);
 					return;
 				}
 				// the OP Shop's blasts (up to 15 times the size) get a bigger cap
 				float power = Math.max(1f, Math.min(UltracraftConfig.opShop ? 32f : kind.equals("1") ? 16f : 10f, size));
-				level.explode(sp, null, V1_BLAST, x, y, z, power, false, blocks, ParticleTypes.EXPLOSION, ParticleTypes.EXPLOSION_EMITTER, BLAST_DEBRIS, SILENT);
+				// the shove and the smoke are Minecraft's own explosion (no damage: ULTRAKILL dealt its own), the crater
+				// comes from BlockDamage.blast, which is a ball rather than Minecraft's rays
+				level.explode(sp, null, V1_BLAST, x, y, z, power, false, Level.ExplosionInteraction.NONE, ParticleTypes.EXPLOSION,
+					ParticleTypes.EXPLOSION_EMITTER, BLAST_DEBRIS, SILENT);
+				if (breaks(level, kind.equals("e"))) BlockDamage.blast(level, sp, x, y, z, power, false);
+				// V1's own blasts put fires out; an enemy's leave them be
+				if (!kind.equals("e")) putOut(level, x, y, z, power);
 				if (kind.equals("e")) {
 					// an enemy's blast: the mobs it throws land without a fall
 					double r = power * 2.0;

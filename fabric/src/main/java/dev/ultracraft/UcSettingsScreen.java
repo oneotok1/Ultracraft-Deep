@@ -195,6 +195,8 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 			bool("V1 Breaks Blocks", "V1's guns, punches, slams and blasts break blocks.", UltracraftConfig.playerBlockDamage, v -> UltracraftConfig.playerBlockDamage = v),
 			bool("Enemies Break Blocks", "ULTRAKILL's enemies' shots, beams, blasts and fire break blocks.", UltracraftConfig.enemyBlockDamage,
 				v -> UltracraftConfig.enemyBlockDamage = v),
+			bool("Blasts Put Fire Out", "V1's explosions put out the fire around them: the flames they land in, and the ones they would start (the mini nuke stops setting its crater alight). Fire is a block, but the two above never reach it, so this works with them off.",
+				UltracraftConfig.blastFireOut, v -> UltracraftConfig.blastFireOut = v),
 			slider("Impact Frames", "How long ULTRAKILL's impact frames (the freeze on big hits) last: 0.1x to 3x.", 1, 30, Math.round(UltracraftConfig.impactFrames * 10f),
 				v -> String.format(Locale.ROOT, "%.1fx", v / 10f), v -> UltracraftConfig.impactFrames = v / 10f),
 			bool("Start ULTRAKILL", "Starting Minecraft starts ULTRAKILL too (through Steam), and closing Minecraft closes it.", UltracraftConfig.launchUltrakill,

@@ -6,6 +6,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.BaseFireBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -150,6 +151,75 @@ final class BlockDamage {
 		}
 		level.removeBlock(pos, false);
 		return true;
+	}
+
+	/** How far a blast of V1's reaches per point of its size: a little more than the rays ULTRAKILL's own explosion
+	 * casts, which is where the extra bite comes from. */
+	private static final double BLAST_REACH = 1.35;
+	/** The most blocks one blast may break: a blast big enough to raise this stops there, rather than stalling a tick. */
+	private static final int BLAST_BLOCKS = 20000;
+	/** How much of what a blast breaks drops (the rest is dust): a crater's worth of items would bury the world. */
+	private static final float BLAST_DROPS = 0.2f;
+
+	/**
+	 * A blast of V1's, as a ball. Minecraft's own explosion walks rays out from the centre in 1,352 directions and stops
+	 * at whatever a ray meets, so the far side of a big one is a grid of holes: the crater comes out as a bowl with
+	 * stepped, squared-off shoulders rather than a sphere. Distance has no such gaps, so this walks the ball itself and
+	 * decides each block by how close it is (the nearest go, the ones the edge only clips crack).
+	 *
+	 * <p>fire: a mini nuke leaves its crater burning, unless blasts are put out (UltracraftConfig.blastFireOut).
+	 */
+	static void blast(ServerLevel level, ServerPlayer by, double x, double y, double z, float power, boolean fire) {
+		heal(level);
+		double reach = Math.max(1.0, Math.min(32.0, power * BLAST_REACH));
+		int r = (int) Math.ceil(reach);
+		BlockPos centre = BlockPos.containing(x, y, z);
+		double reach2 = reach * reach;
+		int broken = 0;
+		for (int dy = -r; dy <= r; dy++) {
+			for (int dx = -r; dx <= r; dx++) {
+				for (int dz = -r; dz <= r; dz++) {
+					double d2 = dx * dx + dy * dy + dz * dz;
+					if (d2 > reach2) continue;
+					BlockPos p = centre.offset(dx, dy, dz);
+					if (level.isOutsideBuildHeight(p) || !level.hasChunkAt(p)) continue;
+					BlockState s = level.getBlockState(p);
+					if (s.isAir() || s.is(UltracraftCommon.UK_SHOP) || s.getBlock() instanceof LiquidBlock) continue;
+					if (broken >= BLAST_BLOCKS) return;
+					float hardness = s.getDestroySpeed(level, p);
+					if (hardness < 0f) continue;
+					// the blow falls off with the square of the distance: full at the centre, gone at the ball's edge
+					float force = power * 2.5f * (float) (1.0 - d2 / reach2);
+					float health = Math.max(0.25f, hardness * HP_PER_HARDNESS);
+					Hurt h = HURT.get(p);
+					if (force + (h != null ? h.damage : 0f) < health) {
+						// too hard from where it stands: it cracks, and a later blast finishes it
+						Hurt hh = HURT.computeIfAbsent(p.immutable(), k -> new Hurt(nextBreaker++));
+						hh.damage += force;
+						hh.last = System.currentTimeMillis();
+						level.destroyBlockProgress(hh.breakerId, p, Math.min(9, (int) (hh.damage / health * 10f)));
+						continue;
+					}
+					if (h != null) {
+						level.destroyBlockProgress(h.breakerId, p, -1);
+						HURT.remove(p);
+					}
+					// a blast takes its loot the way an explosion does: some of it, not every last block
+					if (level.random.nextFloat() < BLAST_DROPS) {
+						BlockEntity be = s.hasBlockEntity() ? level.getBlockEntity(p) : null;
+						Block.dropResources(s, level, p, be, by, ItemStack.EMPTY);
+					}
+					level.removeBlock(p, false);
+					broken++;
+					if (fire && level.random.nextFloat() < 0.06f) {
+						BlockPos air = p.above();
+						if (level.getBlockState(air).isAir() && BaseFireBlock.canBePlacedAt(level, air, net.minecraft.core.Direction.UP)) {
+							level.setBlockAndUpdate(air, BaseFireBlock.getState(level, air));
+						}
+					}
+				}
+			}
+		}
 	}
 
 	/** The block the hit went into: step a little way along the hit direction from the surface point. */
