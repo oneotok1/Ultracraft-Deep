@@ -154,9 +154,10 @@ final class BlockDamage {
 		return true;
 	}
 
-	/** How far a blast of V1's reaches per point of its size: a little more than the rays ULTRAKILL's own explosion
-	 * casts, which is where the extra bite comes from. */
-	private static final double BLAST_REACH = 1.35;
+	/** How far a blast of V1's reaches per point of its size. The blast that hurts mobs reaches exactly `size` blocks
+	 * (Combat.cs, BlastsReachMobs), so this is the crater's margin over it: the ground goes a shade further than the
+	 * mobs do, and no further. Keep it near 1: a bigger crater digs blocks out from under anyone the blast missed. */
+	private static final double BLAST_REACH = 1.1;
 	/** The most blocks one blast may break: a blast big enough to raise this stops there, rather than stalling a tick. */
 	private static final int BLAST_BLOCKS = 20000;
 	/** How much of what a blast breaks drops (the rest is dust): a crater's worth of items would bury the world. */
