@@ -11,6 +11,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
@@ -211,11 +212,10 @@ final class BlockDamage {
 					}
 					level.removeBlock(p, false);
 					broken++;
-					if (fire && level.random.nextFloat() < 0.06f) {
-						BlockPos air = p.above();
-						if (level.getBlockState(air).isAir() && BaseFireBlock.canBePlacedAt(level, air, net.minecraft.core.Direction.UP)) {
-							level.setBlockAndUpdate(air, BaseFireBlock.getState(level, air));
-						}
+					// the burning crater: the block just taken out is where the fire goes, standing on the one under it
+					// (Minecraft's own explosions light one block in three; this does the same)
+					if (fire && level.random.nextInt(3) == 0 && BaseFireBlock.canBePlacedAt(level, p, Direction.UP)) {
+						level.setBlockAndUpdate(p, BaseFireBlock.getState(level, p));
 					}
 				}
 			}
