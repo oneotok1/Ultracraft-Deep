@@ -1049,6 +1049,9 @@ namespace UltraBridge
                     v2.knockOutHealth = 0f;
                     v2.dontDie = false;
                     v2.escapeTarget = null;
+                    // its limbs stay on: tearing them off leaves the body in pieces, over Minecraft
+                    var ve = v2.GetComponent<Enemy>();
+                    if (ve != null) ve.dismemberment = false;
                 }
                 foreach (var gabe in go.GetComponentsInChildren<GabrielBase>(true))
                 {

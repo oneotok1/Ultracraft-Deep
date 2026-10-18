@@ -200,4 +200,31 @@ namespace UltraBridge
             if (!__state && __instance.dead) Bridge.EnemyDied(__instance);
         }
     }
+
+    /// <summary>ULTRAKILL's machines shatter into its own gib pieces (entrails, skull chunks, eyeballs) and their limbs
+    /// come off; it is a lot to have raining down over Minecraft, and a boss's body is left in bits. V2 dies the way a
+    /// mob does instead (Bridge.DeathGore): the blood of a chest burst and the big splatters, no pieces.</summary>
+    [HarmonyPatch(typeof(Enemy), nameof(Enemy.ReadyGib))]
+    static class NoV2Gibs
+    {
+        static bool Prefix(Enemy __instance) => __instance.GetComponent<V2>() == null;
+    }
+
+    /// <summary>The moment a V2 dies, it gets the mob death's blood. (Not hooked on V2.Die: with dontDie off, as the
+    /// bridge sets it, that returns at once and the machine dies through Enemy.GoLimp like any other.)</summary>
+    [HarmonyPatch(typeof(Enemy), nameof(Enemy.GoLimp), new[] { typeof(bool) })]
+    static class V2DeathGore
+    {
+        static void Prefix(Enemy __instance, out bool __state) => __state = __instance.limp;
+
+        static void Postfix(Enemy __instance, bool __state)
+        {
+            // a call on a body that's already limp did nothing (GoLimp returns at once): its blood is long out
+            if (__state || Bridge.I == null || __instance.GetComponent<V2>() == null) return;
+            var eid = __instance.GetComponent<EnemyIdentifier>();
+            if (eid == null) return;
+            var body = Bridge.EnemyBounds(eid);
+            Bridge.I.DeathGore(eid, body.center, body.size.x, body.size.y);
+        }
+    }
 }

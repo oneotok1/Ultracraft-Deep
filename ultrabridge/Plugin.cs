@@ -3674,10 +3674,15 @@ namespace UltraBridge
         void DeathGore(McProxy p, Vector3 at, float w, float h)
         {
             if (p != null && p.type == "end_crystal") return;
+            if (p != null && p.center != null) at = p.center.position;
+            DeathGore(p != null ? p.eid : null, at, w, h);
+        }
+
+        /// <summary>The same death for one of ULTRAKILL's own bodies: a V2 dies the way a mob does.</summary>
+        internal void DeathGore(EnemyIdentifier eid, Vector3 at, float w, float h)
+        {
             var bsm = MonoSingleton<BloodsplatterManager>.Instance;
             if (bsm == null) return;
-            var eid = p != null ? p.eid : null;
-            if (p != null && p.center != null) at = p.center.position;
             try
             {
                 // gibs and bursts live in a gore zone, which shows and cleans them up like any enemy's
