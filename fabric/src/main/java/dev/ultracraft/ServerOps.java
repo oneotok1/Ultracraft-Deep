@@ -421,10 +421,11 @@ public final class ServerOps {
 				if (kind.equals("2")) {
 					// the mini nuke: a burning crater twice anything else's size, hurting every mob caught in it
 					float power = Math.max(18f, Math.min(UltracraftConfig.opShop ? 48f : 24f, size * 2f));
+					// the fire already there goes first: the nuke's own crater is still set alight below
+					putOut(level, x, y, z, power);
 					level.explode(sp, null, V1_SLAM, x, y, z, power, false, Level.ExplosionInteraction.NONE,
 						ParticleTypes.EXPLOSION, ParticleTypes.EXPLOSION_EMITTER, BLAST_DEBRIS, SoundEvents.GENERIC_EXPLODE);
-					if (breaks(level, kind.equals("e"))) BlockDamage.blast(level, sp, x, y, z, power, !UltracraftConfig.blastFireOut);
-					putOut(level, x, y, z, power);
+					if (breaks(level, kind.equals("e"))) BlockDamage.blast(level, sp, x, y, z, power, true);
 					return;
 				}
 				// the OP Shop's blasts (up to 15 times the size) get a bigger cap
