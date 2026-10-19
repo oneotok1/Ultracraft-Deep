@@ -97,6 +97,10 @@ public final class UltracraftConfig {
 	public static boolean hushMcMusic = true;
 	/** Kills at the top style ranks pay extra: experience, loot, and more for a streak of them. */
 	public static boolean styleRewards = true;
+	/** The streak's number over Minecraft's crosshair (each kill at S and up); styleStreakTitle adds the big one at
+	 * every fifth kill. Both off: neither shows. */
+	public static boolean styleStreakText = true;
+	public static boolean styleStreakTitle = true;
 	/** ULTRAKILL arenas generate in new parts of the world, each with a boss waiting. */
 	public static boolean arenas = true;
 	/** The Cyber Grind takes V1 through its own arenas (GrindArenas) instead of fighting round the shop. */
@@ -133,7 +137,7 @@ public final class UltracraftConfig {
 
 	private static final String[] KEYS = {"v1Height", "autoV1", "ukSpawns", "mcMobs", "sharpShop", "grindBest", "bosses", "bossMinutes", "bossDifficulty", "traitChance", "bossWarnSeconds", "bossIntros", "bossDeaths", "bossArenas",
 		"allGear", "playerBlockDamage", "enemyBlockDamage", "blastFireOut", "impactFrames", "launchUltrakill", "opShop", "ukFpsCap", "steveEnemies", "fightMusic", "bossThemes",
-		"calmMusic", "hushMcMusic", "styleRewards", "arenas", "grindArenas", "lockStep", "lowLatency",
+		"calmMusic", "hushMcMusic", "styleRewards", "styleStreakText", "styleStreakTitle", "arenas", "grindArenas", "lockStep", "lowLatency",
 		"effects", "stainCap", "extraGore", "terrainRange", "ultrakillDir", "setupUltrakill", "teammateMarkers"};
 
 	private static final String COMMENT = "Ultracraft (most of this is on the Ultracraft settings screen): v1Height = ULTRAKILL render height (0 = full window, lower = faster);"
@@ -143,6 +147,7 @@ public final class UltracraftConfig {
 		+ " playerBlockDamage / enemyBlockDamage = V1's / enemies' attacks break blocks; blastFireOut = V1's blasts put fire out; impactFrames = hitstop length (0.1 to 3);"
 		+ " launchUltrakill = start ULTRAKILL with Minecraft; opShop = upgrades go to 1500%; uk.* = ULTRAKILL settings used while playing Ultracraft;"
 		+ " fightMusic = off, random or a song of ULTRAKILL's soundtrack; cheat.* = cheats on; arenas = ULTRAKILL arenas generate in new chunks; grindArenas = the Cyber Grind runs through its own 50 arenas; lockStep = Minecraft waits for ULTRAKILL's frames;"
+		+ " styleStreakText = the streak's number on screen, styleStreakTitle = the big one at every fifth kill (both off: neither);"
 		+ " effects = 2 high, 1 medium, 0 low; stainCap = blood stains kept on blocks (0 none); extraGore = Ultracraft's extra death blood; terrainRange = blocks of terrain sent to ULTRAKILL (64-128);"
 		+ " ultrakillDir = ULTRAKILL's folder, only if Ultracraft can't find it through Steam (it sets up BepInEx and the UltraBridge plugin there); setupUltrakill = you let Ultracraft set ULTRAKILL up (and keep its plugin up to date); teammateMarkers = the other players' names and health over ULTRAKILL's view";
 
@@ -215,6 +220,8 @@ public final class UltracraftConfig {
 			calmMusic = bool(p, "calmMusic", calmMusic);
 			hushMcMusic = bool(p, "hushMcMusic", hushMcMusic);
 			styleRewards = bool(p, "styleRewards", styleRewards);
+			styleStreakText = bool(p, "styleStreakText", styleStreakText);
+			styleStreakTitle = bool(p, "styleStreakTitle", styleStreakTitle);
 			arenas = bool(p, "arenas", arenas);
 			grindArenas = bool(p, "grindArenas", grindArenas);
 			lockStep = bool(p, "lockStep", lockStep);
@@ -281,6 +288,8 @@ public final class UltracraftConfig {
 		p.setProperty("calmMusic", Boolean.toString(calmMusic));
 		p.setProperty("hushMcMusic", Boolean.toString(hushMcMusic));
 		p.setProperty("styleRewards", Boolean.toString(styleRewards));
+		p.setProperty("styleStreakText", Boolean.toString(styleStreakText));
+		p.setProperty("styleStreakTitle", Boolean.toString(styleStreakTitle));
 		p.setProperty("arenas", Boolean.toString(arenas));
 		p.setProperty("grindArenas", Boolean.toString(grindArenas));
 		p.setProperty("lockStep", Boolean.toString(lockStep));

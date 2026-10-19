@@ -98,10 +98,13 @@ namespace UltraBridge
                     var target = head && eid.weakPoint != null ? eid.weakPoint : eid.gameObject;
                     try
                     {
+                        // whose blow it is (their Minecraft id), noted before the damage: if it kills, the kill is theirs
+                        int mate = a.Length > 4 ? int.Parse(a[4]) : 0;
+                        if (mate != 0) NoteMateHit(eid, mate);
                         eid.hitter = blast ? "explosion" : "revolver";
                         eid.DeliverDamage(target, Vector3.zero, target.transform.position, F(a[1]), false, head ? 1f : 0f, null, false, blast);
                         // who did it (their Minecraft id): it counts towards whom the enemy goes for
-                        if (a.Length > 4) AddThreat(eid, int.Parse(a[4]), F(a[1]));
+                        if (mate != 0) AddThreat(eid, mate, F(a[1]));
                     }
                     catch (Exception e) { Plugin.Log.LogDebug("EHIT: " + e.Message); }
                     break;

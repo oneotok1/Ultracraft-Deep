@@ -864,7 +864,12 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
             if (eid != null) eid.spawnIn = true;
             go.SetActive(true);
             if (kind == 1) naturals[go] = Time.time;
-            if (kind == 2 && eid != null) grindEnemies[eid] = go;
+            if (kind == 2 && eid != null)
+            {
+                grindEnemies[eid] = go;
+                // its corpse goes the way ULTRAKILL's grind takes that enemy's (Corpses.cs)
+                go.AddComponent<GrindCorpse>();
+            }
             Net.Send("SPAWNED " + so.objectName + " " + UkToMc(p));
             return go;
         }
@@ -910,7 +915,9 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
             var at = UkToMc(mid);
             int rank = 0;
             try { rank = MonoSingleton<StyleHUD>.Instance != null ? MonoSingleton<StyleHUD>.Instance.rankIndex : 0; } catch { }
-            Net.Send("UKDEAD " + eid.enemyType + " " + S(at.x) + " " + S(at.y) + " " + S(at.z) + " " + rank + " " + (grind ? 1 : 0));
+            // whose kill it was: a teammate's last blow takes the experience and the streak to them, not to us
+            int credit = TakeKillCredit(eid);
+            Net.Send("UKDEAD " + eid.enemyType + " " + S(at.x) + " " + S(at.y) + " " + S(at.z) + " " + rank + " " + (grind ? 1 : 0) + (credit != 0 ? " " + credit : ""));
         }
 
         // ------------------------------------------------------------ Minecraft's sun and sky

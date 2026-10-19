@@ -821,7 +821,7 @@ public final class Ultracraft implements ClientModInitializer {
 
 	/** ULTRAKILL's messages that act on the world, handled by the server (ServerOps). */
 	private static final java.util.regex.Pattern SERVER_OPS = java.util.regex.Pattern.compile(
-		"^(V1STATE|FX|SLAM|RAIL|BOOM|HIT|FIRE|DMG|WHIP|MKNOCK|PIMPACT|PHOLD|PRELEASE|PARRY|PEARN|PADD|GEARADD|UPBUY|BOSSPOS|BOSSDEAD|BOSSGONE|GRIND|SPAWNS|UKDEAD|GRINDGONE|UKDIE|PHIT|SHURT|EQUIP|NOSPAWN|STYLE) ");
+		"^(V1STATE|FX|SLAM|RAIL|BOOM|HIT|FIRE|DMG|WHIP|MKNOCK|PIMPACT|PHOLD|PRELEASE|PARRY|PEARN|PADD|GEARADD|UPBUY|BOSSPOS|BOSSDEAD|BOSSGONE|GRIND|SPAWNS|UKDEAD|GRINDGONE|UKDIE|PHIT|SHURT|EQUIP|NOSPAWN|STYLE|UKSTYLE|UKMULTI) ");
 
 	/** A line from the server for our Minecraft side ("C:..." in UcNet), on the client thread. */
 	static void fromServer(String msg) {

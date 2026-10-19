@@ -179,6 +179,10 @@ public final class ServerOps {
 			le.setDeltaMovement(v.x, v.y, v.z);
 			le.fallDistance = 0;
 			le.hurtMarked = true;
+			// only the velocity is told to the mob's own client; everyone else, V1's client included,
+			// would wait for the ordinary 20-tick entity update and see the mob hang still for the
+			// first fifth of a second, then jump. Send where it actually is on every reel tick.
+			syncNow((ServerLevel) v1.level(), le);
 			return false;
 		});
 	}
@@ -593,17 +597,43 @@ public final class ServerOps {
 				sp.displayClientMessage(Component.literal(UltracraftConfig.ukSpawns ? "ULTRAKILL's enemies spawn in the dark again" : "ULTRAKILL's enemies no longer spawn in the dark"), true);
 			}
 			case "UKDEAD" -> {
-				// UKDEAD type x y z rank grind: one of this player's ULTRAKILL's enemies died: its experience drops there
+				// UKDEAD type x y z rank grind [credit]: one of this player's ULTRAKILL's enemies died: its experience
+				// drops there. credit (a teammate's Minecraft entity id) is who landed the killing blow: the experience,
+				// the streak and the loot are theirs, since the enemy died to their hit (their ULTRAKILL paid the style)
 				Vec3 at = new Vec3(Double.parseDouble(a[2]), Double.parseDouble(a[3]), Double.parseDouble(a[4]));
 				int rank = a.length > 5 ? Integer.parseInt(a[5]) : 0;
-				UkSpawns.died(sp, level, a[1], at, rank);
+				ServerPlayer paid = sp;
+				ServerPlayer mate = a.length > 7 ? playerOf(server, Integer.parseInt(a[7])) : null;
+				if (mate != null && UcNet.isV1(mate)) paid = mate;
+				// the rank that scales the experience is the killer's own, and only their game knows it
+				if (paid != sp) rank = state(paid).rank;
+				UkSpawns.died(paid, level, a[1], at, rank);
+				// the wave still counts against the runner: it is their Cyber Grind
 				if (a.length > 6 && a[6].equals("1")) CyberGrind.died(sp);
+			}
+			case "UKMULTI" -> {
+				// UKMULTI entity: that kill also extended a multikill chain, which counts in the killer's game
+				ServerPlayer mate = playerOf(server, Integer.parseInt(a[1]));
+				if (mate != null && UcNet.isV1(mate)) UcNet.send(mate, "UKMULTI");
+			}
+			case "UKSTYLE" -> {
+				// UKSTYLE entity points pointID: a teammate killed one of this player's ULTRAKILL enemies with the blow
+				// that ended it: the style for that kill belongs to them, not to the enemy's owner
+				ServerPlayer mate = playerOf(server, Integer.parseInt(a[1]));
+				if (mate != null && UcNet.isV1(mate)) UcNet.send(mate, "UKCREDIT " + a[2] + " " + (a.length > 3 ? a[3] : ""));
 			}
 			// GRINDGONE: one of the wave's enemies never came, or fell out of the world: the wave doesn't wait for it
 			case "GRINDGONE" -> CyberGrind.died(sp);
 			default -> {
 			}
 		}
+	}
+
+	// a player by its Minecraft entity id: the level's entity map is for the world's creatures, not for players
+	private static ServerPlayer playerOf(MinecraftServer server, int id) {
+		if (server == null) return null;
+		for (ServerPlayer p : server.getPlayerList().getPlayers()) if (p.getId() == id) return p;
+		return null;
 	}
 
 	// ------------------------------------------------------------------ damage to mobs
@@ -663,12 +693,6 @@ public final class ServerOps {
 			le.push(away.x * 1.6, 0.6, away.z * 1.6);
 			le.hurtMarked = true;
 		}
-		if (!le.isAlive()) {
-			UcNet.send(sp, "KILL " + id);
-			// style pays for Minecraft's mobs too
-			float worth = StyleRewards.kill(sp, le.position().add(0, le.getBbHeight() * 0.5, 0));
-			if (worth > 1f) net.minecraft.world.entity.ExperienceOrb.award(level, le.position(), Math.round(5f * (worth - 1f)) + 2);
-		}
 	}
 
 	// ------------------------------------------------------------------ Minecraft's projectiles and parries
@@ -719,8 +743,8 @@ public final class ServerOps {
 	 * 10 ticks (fireballs) or 20 (arrows), its velocity at once: a parried one went the right way from where the client
 	 * last had it, behind V1, so it looked like it flew straight through V1 unharmed instead of being sent back.
 	 */
-	private static void syncNow(ServerLevel level, Projectile pr) {
-		level.getChunkSource().sendToTrackingPlayers(pr, ClientboundEntityPositionSyncPacket.of(pr));
+	private static void syncNow(ServerLevel level, Entity e) {
+		level.getChunkSource().sendToTrackingPlayers(e, ClientboundEntityPositionSyncPacket.of(e));
 	}
 
 	/** From ProjectileMixin, after any projectile hit something: a parried one hurts it a parry's worth more. */
@@ -742,11 +766,6 @@ public final class ServerOps {
 			if (le.distanceToSqr(x, le.getY(), z) > radius * radius) continue;
 			le.invulnerableTime = 0;
 			le.hurtServer(level, level.damageSources().playerAttack(sp), 20f);
-			if (!le.isAlive()) {
-				UcNet.send(sp, "KILL " + le.getId());
-				float worth = StyleRewards.kill(sp, le.position().add(0, le.getBbHeight() * 0.5, 0));
-				if (worth > 1f) net.minecraft.world.entity.ExperienceOrb.award(level, le.position(), Math.round(5f * (worth - 1f)) + 2);
-			}
 		}
 	}
 

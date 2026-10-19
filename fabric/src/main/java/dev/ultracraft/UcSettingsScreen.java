@@ -208,6 +208,11 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 	private static void shop(Category c) {
 		c.add(bool("Style Rewards", "Kills at ULTRAKILL's top style ranks (S and up) pay extra experience and loot, and a streak of them pays more: diamonds and golden apples at SSS, netherite at ULTRAKILL.",
 				UltracraftConfig.styleRewards, v -> UltracraftConfig.styleRewards = v),
+			slider("Style Streak Text", "The streak's number over the crosshair each kill at S and up, and the big one across the screen at every fifth. Off hides both; the experience and loot are unaffected.",
+				0, 2, UltracraftConfig.styleStreakTitle ? 2 : UltracraftConfig.styleStreakText ? 1 : 0, v -> STREAK_NAMES[v], v -> {
+					UltracraftConfig.styleStreakText = v > 0;
+					UltracraftConfig.styleStreakTitle = v > 1;
+				}),
 			bool("OP Shop", "The shop's Upgrades page goes much further: every weapon's and arm's Power up to 1500%, and blast sizes (Payload, Shockwave, the mini nuke) up to 1500%.",
 				UltracraftConfig.opShop, v -> {
 					UltracraftConfig.opShop = v;
@@ -242,6 +247,8 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 	}
 
 	private static final String[] FX_NAMES = {"Low", "Medium", "High"};
+	/** Style Streak Text: nothing, the line above the hotbar only, or that line and the big one at every fifth. */
+	private static final String[] STREAK_NAMES = {"Off", "Hotbar Line", "Both"};
 	private static final int[] STAINS = {0, 500, 1500, 4096, BloodStains.MAX};
 	private static final String[] STAIN_NAMES = {"Off", "500", "1,500", "4,096", "All (8,192)"};
 	private static final int[] TERRAIN = {64, 96, 128};

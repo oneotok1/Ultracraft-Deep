@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
@@ -14,6 +15,8 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -114,7 +117,7 @@ final class GrindArenas {
 		java.util.Map.entry("GREED", new String[] {"GreedSky", "GreedSky2", "GreedSky3", "GreedSky4", "GreedSky5"}),
 		java.util.Map.entry("WRATH", new String[] {"../Environment/Layer 5/OvercastSky", "FogCoveredSky", "NightSky2"}),
 		java.util.Map.entry("HERESY", new String[] {"NightSky1", "NightSky3"}),
-		java.util.Map.entry("VIOLENCE", new String[] {"ViolenceSky", "ViolenceSky3", "ViolenceSky4", "ViolenceSky 2"}),
+		java.util.Map.entry("VIOLENCE", new String[] {"ViolenceSky", "ViolenceSky3", "ViolenceSky4"}),
 		java.util.Map.entry("FRAUD", new String[] {"FraudCity_SkyMat_Night", "FraudCity_SkyMat"}),
 		java.util.Map.entry("TREACHERY", new String[] {"SpaceSky", "NightSky4"}),
 		java.util.Map.entry("PRIME SANCTUM", new String[] {"NightSky5", "SpaceSky"}),
@@ -367,7 +370,28 @@ final class GrindArenas {
 				if (n != t) still = true;
 			}
 		}
+		unstick(server);
 		moving = still;
+	}
+
+	/**
+	 * The columns close over nobody: a V1 whose feet have a column's block swing up into them goes back on top of that
+	 * column. Only a block that's really there counts, so standing on a low column beside a tall one is left alone.
+	 */
+	private static void unstick(MinecraftServer server) {
+		ServerLevel level = server.getLevel(DIMENSION);
+		if (level == null) return;
+		for (ServerPlayer o : server.getPlayerList().getPlayers()) {
+			if (o.level() != level || !o.isAlive()) continue;
+			int bx = Mth.floor(o.getX()) - (OX - HALF), bz = Mth.floor(o.getZ()) - (OZ - HALF);
+			if (bx < 0 || bz < 0 || bx >= SIZE || bz >= SIZE) continue;
+			BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos(OX - HALF + bx, Mth.floor(o.getY()), OZ - HALF + bz);
+			if (level.getBlockState(m).isAir() && level.getBlockState(m.above()).isAir()) continue;
+			double surface = Y + cur[bx][bz] / 2.0;
+			if (o.getY() >= surface - 0.02) continue;
+			o.teleportTo(level, o.getX(), surface, o.getZ(), Set.of(), o.getYRot(), o.getXRot(), true);
+			o.fallDistance = 0;
+		}
 	}
 
 	/** The pattern's heights (and staircases) as each block column's target, and its markers sorted. */

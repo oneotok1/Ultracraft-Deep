@@ -713,6 +713,26 @@ namespace UltraBridge
                 case "EPOS":
                     ApplyDrawnPositions(rest);
                     break;
+                case "UKMULTI":
+                {
+                    // UKMULTI: the kill was a multikill too; that chain is counted here, in the game whose meter it feeds
+                    if (levelPrepared) AddMultiKill();
+                    break;
+                }
+                case "UKCREDIT":
+                {
+                    // UKCREDIT points pointID: a teammate killed one of our enemies; the style for it is paid here, in
+                    // their game, where their meter and rank live (the enemy object is long gone, so no eid: the puppet
+                    // guard in AddPoints would swallow it otherwise)
+                    var a = rest.Split(' ');
+                    int pts = int.Parse(a[0]);
+                    string what = a.Length > 1 ? a[1] : "";
+                    if (levelPrepared)
+                    {
+                        MonoSingleton<StyleHUD>.Instance?.AddPoints(pts, what);
+                    }
+                    break;
+                }
                 case "KILL":
                 {
                     if (levelPrepared && proxies.TryGetValue(int.Parse(rest), out var p) && p != null)
@@ -2267,6 +2287,10 @@ namespace UltraBridge
 
         static bool IsProxy(EnemyIdentifier eid) => eid != null && eid.GetComponent<McProxy>() != null;
 
+        /// <summary>Style for a kill a teammate made: UKSTYLE their Minecraft id, the points, and which line it is.
+        /// Minecraft forwards it to their game, which pays it (their name for it is UKCREDIT).</summary>
+        public void SendMultiKill(int mate) => Net.Send("UKMULTI " + mate);
+        public void SendStyleCredit(int mate, int points, string pointID) => Net.Send("UKSTYLE " + mate + " " + points + " " + (pointID ?? ""));
         public void MarkV1Attack(EnemyIdentifier eid)
         {
             if (eid != null) v1AggroUntil[eid.GetInstanceID()] = Time.time + 8f;
@@ -2418,6 +2442,9 @@ namespace UltraBridge
             var b = EnemyBounds(eid);
             var limb = eid.GetComponentInChildren<EnemyIdentifierIdentifier>();
             // V1's own Minecraft weapon (a sword in Minecraft hands) is V1's melee; lava and fire burn
+            // a teammate's Minecraft weapon may be what kills it; a mob's bite never claims the kill for anyone
+            if (mate != 0) NoteMateHit(eid, mate);
+            else if (byV1) ClearMateHit(eid);
             eid.hitter = kind == "fire" ? "fire" : byV1 ? "punch" : "enemy";
             eid.DeliverDamage(limb != null ? limb.gameObject : eid.gameObject, Vector3.zero, b.center, mcDamage / 10f, false, 0f, null);
             if (byV1)
@@ -3771,6 +3798,8 @@ namespace UltraBridge
                 {
                     Bridge.I?.MarkV1Attack(__instance);
                     Bridge.I?.AddThreat(__instance, 0, multiplier);
+                    // ours, so a kill now is our kill (a teammate's earlier blow no longer claims it)
+                    Bridge.I?.ClearMateHit(__instance);
                 }
                 return true;
             }

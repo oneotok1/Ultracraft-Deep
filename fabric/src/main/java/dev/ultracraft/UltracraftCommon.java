@@ -115,9 +115,28 @@ public final class UltracraftCommon implements ModInitializer {
 				int p = Math.max(100, Math.min(2000, 100 + Math.round(entity.getMaxHealth() * 10f)));
 				UkProgress.get(killer).award(p);
 			}
+			// a mob V1 kills pays style whichever way it died: a blast that goes off in Minecraft hurts every mob in its
+			// reach without a damage message being sent, so the deaths that never went through the DMG channel were
+			// paying nothing at all
+			if (UcNet.anyV1() && bleeds(entity)) {
+				ServerPlayer killer = v1Behind(source);
+				if (killer != null && entity.level() instanceof ServerLevel sl) {
+					UcNet.send(killer, "KILL " + entity.getId());
+					float worth = StyleRewards.kill(killer, entity.position().add(0, entity.getBbHeight() * 0.5, 0));
+					if (worth > 1f) net.minecraft.world.entity.ExperienceOrb.award(sl, entity.position(), Math.round(5f * (worth - 1f)) + 2);
+				}
+			}
 			if (!UcNet.anyV1() || !bleeds(entity)) return;
 			UcNet.sendNear(entity, 80, String.format(Locale.ROOT, "DIED %d %.3f %.3f %.3f %.3f %.3f", entity.getId(), entity.getX(), entity.getY(), entity.getZ(), entity.getBbWidth(), entity.getBbHeight()));
 		});
+	}
+
+	/** The V1 behind a death: whoever swung, whose arrow it was, or whose explosion went off in Minecraft. */
+	private static ServerPlayer v1Behind(net.minecraft.world.damagesource.DamageSource source) {
+		Entity by = source.getEntity();
+		if (by instanceof ServerPlayer sp) return UcNet.isV1(sp) ? sp : null;
+		if (by instanceof net.minecraft.world.entity.projectile.Projectile pr && pr.getOwner() instanceof ServerPlayer sp) return UcNet.isV1(sp) ? sp : null;
+		return null;
 	}
 
 	/** Mobs bleed ULTRAKILL's blood; players and ULTRAKILL's own enemies (who have their own) don't. */
