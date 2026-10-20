@@ -9,7 +9,8 @@ import net.minecraft.world.entity.player.Player;
 /**
  * Damage that got through Minecraft's own rules (difficulty, shields, armour and its enchantments, Resistance,
  * absorption hearts, invulnerability frames) lands on V1 in ULTRAKILL instead of on Steve's health: half a heart is
- * 5 HP. A mob's melee swing goes over as a parryable hit. Burning (fire, lava, magma, campfires) counts for less: at
+ * 5 HP. A mob's melee swing goes over as a parryable hit (a spear's thrust too, though it lands from blocks away).
+ * Burning (fire, lava, magma, campfires) counts for less: at
  * 5 HP a half heart, a few seconds alight took half of V1's health.
  */
 public final class V1Damage {
@@ -43,9 +44,10 @@ public final class V1Damage {
 		// V1's health is scaled to Steve's maximum (see Vitals on the bridge side): the same fraction of the bar
 		// rather than a fixed 5 per half heart, so a health boost makes each hit cost the same share
 		int uk = Math.max(1, Math.round(dealt * UkLink.maxHp / player.getMaxHealth()));
-		if ((source.is(DamageTypes.MOB_ATTACK) || source.is(DamageTypes.MOB_ATTACK_NO_AGGRO)) && source.getEntity() instanceof Mob mob && source.getDirectEntity() == mob) {
+		Mob mob = swingMob(source);
+		if (mob != null) {
 			// ULTRAKILL flashes the mob and gives V1 the parry window before the hit lands
-			UcNet.send(sp, "MELEE " + mob.getId() + " " + uk);
+			sendMelee(sp, mob, uk);
 			meleeMob = mob.getId();
 			meleeTick = sp.level().getGameTime();
 			meleeBlocked = false;
@@ -64,7 +66,7 @@ public final class V1Damage {
 		if (!UcNet.isV1(sp)) return;
 		Mob mob = swingMob(source);
 		if (mob == null) return;
-		UcNet.send(sp, "MELEE " + mob.getId() + " 0");
+		sendMelee(sp, mob, 0);
 		meleeMob = mob.getId();
 		meleeTick = sp.level().getGameTime();
 		// only a shield plants V1's feet: armour or absorption hearts soaking a hit doesn't
@@ -91,10 +93,22 @@ public final class V1Damage {
 		blocked(sp, source);
 	}
 
-	/** The mob behind a swing that ULTRAKILL should flash, or null for anything else. */
+	/**
+	 * A mob's swing goes to ULTRAKILL along with how far apart the two were when it landed. A spear's thrust reaches
+	 * several blocks past a fist, so the bridge sizes the parry's reach from what Minecraft measured here rather than
+	 * from a fixed guess; a swing Minecraft never measured a distance for keeps to the bridge's own reach.
+	 */
+	private static void sendMelee(ServerPlayer sp, Mob mob, int uk) {
+		UcNet.send(sp, "MELEE " + mob.getId() + " " + uk + " " + mob.distanceTo(sp));
+	}
+
+	/**
+	 * The mob behind a swing that ULTRAKILL should flash, or null for anything else. A spear's thrust counts: Minecraft
+	 * gives it its own SPEAR damage type instead of MOB_ATTACK (the item sets it), and it lands from much further out.
+	 */
 	private static Mob swingMob(DamageSource source) {
 		if (!(source.getEntity() instanceof Mob mob) || source.getDirectEntity() != mob) return null;
-		if (!source.is(DamageTypes.MOB_ATTACK) && !source.is(DamageTypes.MOB_ATTACK_NO_AGGRO)) return null;
+		if (!source.is(DamageTypes.MOB_ATTACK) && !source.is(DamageTypes.MOB_ATTACK_NO_AGGRO) && !source.is(DamageTypes.SPEAR)) return null;
 		return mob;
 	}
 

@@ -23,6 +23,7 @@ import net.minecraft.util.random.WeightedList;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
@@ -43,6 +44,8 @@ public final class ServerOps {
 	/** What the server knows of each V1's player beyond their entity. */
 	static final class State {
 		boolean playing, shopTouch;
+		/** The absorption value ULTRAKILL last heard of (Steve's yellow hearts: only this side can spend them). */
+		int sentAbsorb = -1;
 		/** ULTRAKILL's style rank (STYLE) and the streak of kills at S and up (StyleRewards). */
 		int rank, streak;
 		/** Cheats on the server's side: Never Hungry, Infinite P (the Upgrades page takes nothing). */
@@ -374,6 +377,19 @@ public final class ServerOps {
 					if (Math.abs(sp.getHealth() - h) > 0.01f) sp.setHealth(h);
 				}
 				if (moved > 0.01 && moved < 8 && !carried) sp.causeFoodExhaustion((float) (moved * 0.02));
+				// V1's absorption hearts are Steve's own, and this side is where they are kept: Minecraft's damage
+				// spends them on its own, ULTRAKILL's hits spend them through POOL below, and its ULTRAKILL hears
+				// about every change to them
+				int absorb = Mth.floor(sp.getAbsorptionAmount());
+				if (absorb != state(sp).sentAbsorb) {
+					state(sp).sentAbsorb = absorb;
+					UcNet.send(sp, "ABSORB " + absorb);
+				}
+			}
+			case "POOL" -> {
+				// POOL mc: ULTRAKILL soaked part of a hit with V1's absorption hearts; this is what is left of them
+				sp.setAbsorptionAmount(Math.max(0f, Float.parseFloat(rest.trim())));
+				state(sp).sentAbsorb = Mth.floor(sp.getAbsorptionAmount());
 			}
 			case "UKE" -> UltracraftCommon.updateUkEnemies(sp, rest);
 			case "UKDIE" -> {
@@ -670,6 +686,9 @@ public final class ServerOps {
 			return;
 		}
 		if (!(e instanceof LivingEntity le) || !le.isAlive()) return;
+		// left out of the Mob Damage Filter: ULTRAKILL's side never touches it (its stand-in is gone, this is the
+		// one frame where a hit that was already on its way could still land)
+		if (!MobDamageRules.touchable(le)) return;
 		UkEnemyEntity enemy = by != 0 ? state(sp).enemies.get(by) : null;
 		// V1s don't hurt each other (their shots stop at a teammate), unless they're dueling (Duels); enemies do
 		if (enemy == null && UcNet.isV1(le)) {
@@ -761,6 +780,7 @@ public final class ServerOps {
 		Float bonus = PARRIED.remove(pr.getId());
 		if (PARRIED.size() > 256) PARRIED.clear();
 		if (bonus == null || !(hit instanceof EntityHitResult eh) || !(eh.getEntity() instanceof LivingEntity le) || UcNet.isV1(le) || !le.isAlive()) return;
+		if (!MobDamageRules.touchable(le)) return;
 		if (!(pr.level() instanceof ServerLevel sl)) return;
 		le.invulnerableTime = 0;
 		le.hurtServer(sl, sl.damageSources().thrown(pr, pr.getOwner()), bonus);
@@ -773,6 +793,7 @@ public final class ServerOps {
 		var box = new net.minecraft.world.phys.AABB(x - radius, y - 1.5, z - radius, x + radius, y + 1.0, z + radius);
 		for (LivingEntity le : level.getEntitiesOfClass(LivingEntity.class, box, m -> m.isAlive() && !(m instanceof Player))) {
 			if (le.distanceToSqr(x, le.getY(), z) > radius * radius) continue;
+			if (!MobDamageRules.touchable(le)) continue;
 			le.invulnerableTime = 0;
 			le.hurtServer(level, level.damageSources().playerAttack(sp), 20f);
 		}
@@ -785,6 +806,12 @@ public final class ServerOps {
 			return false;
 		}
 
+		/** Dropped items are thrown by the blast, never destroyed by it: what a mob drops as it dies survives the same blast. */
+		@Override
+		public float getEntityDamageAmount(Explosion explosion, Entity entity, float amount) {
+			return 0f;
+		}
+
 		@Override
 		public float getKnockbackMultiplier(Entity entity) {
 			return entity instanceof Player ? 0f : 1f;
@@ -794,7 +821,13 @@ public final class ServerOps {
 	private static final ExplosionDamageCalculator V1_SLAM = new ExplosionDamageCalculator() {
 		@Override
 		public boolean shouldDamageEntity(Explosion explosion, Entity entity) {
-			return !(entity instanceof Player);
+			return !(entity instanceof Player) && MobDamageRules.touchable(entity);
+		}
+
+		/** Dropped items are thrown by the nuke, never destroyed by it: what a mob drops as it dies has to survive. */
+		@Override
+		public float getEntityDamageAmount(Explosion explosion, Entity entity, float amount) {
+			return entity instanceof ItemEntity ? 0f : super.getEntityDamageAmount(explosion, entity, amount);
 		}
 
 		@Override

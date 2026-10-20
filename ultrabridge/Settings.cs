@@ -50,6 +50,7 @@ namespace UltraBridge
                         if (p[0] == "fx" && int.TryParse(p[1], out var fx)) SetEffects(fx);
                         if (p[0] == "gore") ExtraGore = p[1] == "1";
                         if (p[0] == "stains") SetStains(p[1] == "1");
+                        if (p[0] == "pool") Bridge.PoolCeiling = p[1] == "1";
                     }
                     break;
                 case "VIEW":

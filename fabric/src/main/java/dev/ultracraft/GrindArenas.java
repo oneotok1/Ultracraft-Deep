@@ -22,7 +22,9 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
  * The Cyber Grind's arena, as ULTRAKILL has it: a 16 x 16 grid of square columns floating in a void dimension of its
@@ -358,7 +360,12 @@ final class GrindArenas {
 
 	/** Every server tick: each column that isn't at its height yet moves half a block towards it (ten blocks a second). */
 	static void tick(MinecraftServer server) {
-		if (!built || !moving || gridLevel == null) return;
+		if (!built || gridLevel == null) return;
+		if (!moving) {
+			// settled, but a column can still have been built over V1 (or a teleport put them inside one)
+			unstick(server);
+			return;
+		}
 		boolean still = false;
 		for (int x = 0; x < SIZE; x++) {
 			for (int z = 0; z < SIZE; z++) {
@@ -374,24 +381,47 @@ final class GrindArenas {
 		moving = still;
 	}
 
-	/**
-	 * The columns close over nobody: a V1 whose feet have a column's block swing up into them goes back on top of that
-	 * column. Only a block that's really there counts, so standing on a low column beside a tall one is left alone.
-	 */
+	/** The columns close over nobody: every V1 whose own box has a block inside it goes back on top of one. */
 	private static void unstick(MinecraftServer server) {
 		ServerLevel level = server.getLevel(DIMENSION);
 		if (level == null) return;
 		for (ServerPlayer o : server.getPlayerList().getPlayers()) {
 			if (o.level() != level || !o.isAlive()) continue;
-			int bx = Mth.floor(o.getX()) - (OX - HALF), bz = Mth.floor(o.getZ()) - (OZ - HALF);
-			if (bx < 0 || bz < 0 || bx >= SIZE || bz >= SIZE) continue;
-			BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos(OX - HALF + bx, Mth.floor(o.getY()), OZ - HALF + bz);
-			if (level.getBlockState(m).isAir() && level.getBlockState(m.above()).isAir()) continue;
-			double surface = Y + cur[bx][bz] / 2.0;
-			if (o.getY() >= surface - 0.02) continue;
-			o.teleportTo(level, o.getX(), surface, o.getZ(), Set.of(), o.getYRot(), o.getXRot(), true);
-			o.fallDistance = 0;
+			lift(level, o);
 		}
+	}
+
+	/**
+	 * Puts a V1 back on top of the highest arena block his own box overlaps. The block's real collision shape is what
+	 * counts and it must really overlap him, so standing on a column, or beside a taller one, is left alone: only a
+	 * column that has closed over him (raised through his box, or built where he stands) moves him at all, and it
+	 * moves him to the top of whatever he is inside, the one place that is not inside anything.
+	 */
+	private static void lift(ServerLevel level, ServerPlayer o) {
+		AABB box = o.getBoundingBox();
+		BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+		double surface = Double.NEGATIVE_INFINITY;
+		for (int x = Mth.floor(box.minX); x <= Mth.floor(box.maxX); x++) {
+			for (int z = Mth.floor(box.minZ); z <= Mth.floor(box.maxZ); z++) {
+				if (!inGrid(x, z)) continue;
+				for (int y = Mth.floor(box.minY) - 1; y <= Mth.ceil(box.maxY); y++) {
+					m.set(x, y, z);
+					BlockState state = level.getBlockState(m);
+					if (state.isAir()) continue;
+					VoxelShape shape = state.getCollisionShape(level, m);
+					if (shape.isEmpty() || !shape.move(x, y, z).bounds().intersects(box)) continue;
+					surface = Math.max(surface, y + shape.max(Direction.Axis.Y));
+				}
+			}
+		}
+		if (surface == Double.NEGATIVE_INFINITY || o.getY() >= surface - 0.02) return;
+		o.teleportTo(level, o.getX(), surface, o.getZ(), Set.of(), o.getYRot(), o.getXRot(), true);
+		o.fallDistance = 0;
+	}
+
+	/** Whether a block column is one of the grid's own (the ledge and the shop off its south side are not). */
+	private static boolean inGrid(int x, int z) {
+		return x >= OX - HALF && x < OX + HALF && z >= OZ - HALF && z < OZ + HALF;
 	}
 
 	/** The pattern's heights (and staircases) as each block column's target, and its markers sorted. */

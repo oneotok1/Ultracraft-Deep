@@ -188,6 +188,16 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 				UltracraftConfig.arenas, v -> UltracraftConfig.arenas = v),
 			bool("ULTRAKILL While Steve", "Back as Steve (F8), ULTRAKILL's enemies stay and keep fighting: you see them, and they come for Steve. Off: they wait, frozen, until you're V1 again.",
 				UltracraftConfig.steveEnemies, v -> UltracraftConfig.steveEnemies = v));
+		c.add(Button.builder(Component.literal("Mob Damage Filter..."), b -> Minecraft.getInstance().setScreen(new MobDamageScreen(c.self())))
+			.width(150)
+			.tooltip(Tooltip.create(Component.literal("Which of Minecraft's mobs ULTRAKILL's side may touch at all, group by group and mob by mob.")))
+			.build(), Button.builder(Component.literal("Every Mob Allowed"), b -> {
+				UltracraftConfig.dmgMobs.clear();
+				UltracraftConfig.dmgHostile = true;
+				UltracraftConfig.dmgNeutral = true;
+				UltracraftConfig.dmgPassive = true;
+				UltracraftConfig.dmgOther = true;
+			}).width(150).tooltip(Tooltip.create(Component.literal("Back to every mob of every group, forgetting each mob's own setting."))).build());
 	}
 
 	private static void gameplay(Category c) {
@@ -197,6 +207,8 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 				v -> UltracraftConfig.enemyBlockDamage = v),
 			bool("Blasts Put Fire Out", "V1's explosions put out the fire around them: the flames they land in, and the ones they would start (the mini nuke stops setting its crater alight). Fire is a block, but the two above never reach it, so this works with them off.",
 				UltracraftConfig.blastFireOut, v -> UltracraftConfig.blastFireOut = v),
+			bool("Extra Blood Counts as Health Cap", "V1's absorption hearts (the yellow ones) count as the top of his health bar: the bar and its number include them, and healing past his own maximum fills them back up, so the blood he drinks puts them back. Off: they are only a shield - damage eats them first, healing never refills them, and V1's own maximum is the top of the bar. ULTRAKILL's own hits and Minecraft's are both soaked either way.",
+				UltracraftConfig.absorbCeiling, v -> UltracraftConfig.absorbCeiling = v),
 			slider("Impact Frames", "How long ULTRAKILL's impact frames (the freeze on big hits) last: 0.1x to 3x.", 1, 30, Math.round(UltracraftConfig.impactFrames * 10f),
 				v -> String.format(Locale.ROOT, "%.1fx", v / 10f), v -> UltracraftConfig.impactFrames = v / 10f),
 			bool("Start ULTRAKILL", "Starting Minecraft starts ULTRAKILL too (through Steam), and closing Minecraft closes it.", UltracraftConfig.launchUltrakill,

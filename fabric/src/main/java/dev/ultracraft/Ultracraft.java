@@ -824,7 +824,7 @@ public final class Ultracraft implements ClientModInitializer {
 
 	/** ULTRAKILL's messages that act on the world, handled by the server (ServerOps). */
 	private static final java.util.regex.Pattern SERVER_OPS = java.util.regex.Pattern.compile(
-		"^(V1STATE|FX|SLAM|RAIL|BOOM|HIT|FIRE|DMG|WHIP|MKNOCK|PIMPACT|PHOLD|PRELEASE|PARRY|PEARN|PADD|GEARADD|UPBUY|UPSET|BOSSPOS|BOSSDEAD|BOSSGONE|GRIND|SPAWNS|UKDEAD|GRINDGONE|UKDIE|PHIT|SHURT|EQUIP|NOSPAWN|STYLE|UKSTYLE|UKMULTI) ");
+		"^(V1STATE|FX|SLAM|RAIL|BOOM|HIT|FIRE|DMG|WHIP|MKNOCK|PIMPACT|PHOLD|PRELEASE|PARRY|PEARN|PADD|GEARADD|UPBUY|UPSET|BOSSPOS|BOSSDEAD|BOSSGONE|GRIND|SPAWNS|UKDEAD|GRINDGONE|UKDIE|PHIT|SHURT|EQUIP|NOSPAWN|STYLE|UKSTYLE|UKMULTI|POOL) ");
 
 	/** A line from the server for our Minecraft side ("C:..." in UcNet), on the client thread. */
 	static void fromServer(String msg) {
@@ -949,6 +949,9 @@ public final class Ultracraft implements ClientModInitializer {
 			}
 			// ULTRAKILL's own enemies' stand-ins are ULTRAKILL's already
 			if (e == self || !(e instanceof LivingEntity le) || !le.isAlive() || e instanceof UkEnemyEntity || e.isSpectator()) continue;
+			// a mob the Mob Damage Filter leaves out is never sent over at all: no stand-in is made for it there,
+			// so none of ULTRAKILL's weapons, fists, enemies, Whiplash or blasts has anything to reach
+			if (!MobDamageRules.touchable(e)) continue;
 			// another player who is V1: ULTRAKILL draws V1's body there, and its enemies go for them as for us (a
 			// teammate who is down in a boss fight watches as a spectator: not there, and nobody's target)
 			boolean v1 = UcNet.isV1(e);

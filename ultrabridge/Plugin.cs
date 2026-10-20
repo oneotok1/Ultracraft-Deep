@@ -87,6 +87,9 @@ namespace UltraBridge
         // this swing was stopped dead (a raised shield, armour that took all of it): ULTRAKILL still flashes the
         // mob and offers the parry, but the hit itself never lands
         public bool swingBlocked;
+        // how far that swing reached when it landed, as Minecraft measured it: a spear's thrust is several blocks
+        // out, so the parry and the dodge test at the window's end are sized from this rather than from MeleeReach
+        public float swingReach = 5f;
         // when V1's fist last landed on it: a punch just before its swing still parries
         public float punchedAt = -10f;
         public readonly CancellationTokenSource life = new CancellationTokenSource();
@@ -597,9 +600,9 @@ namespace UltraBridge
                     break;
                 case "MELEE":
                 {
-                    // MELEE <mob id> <ULTRAKILL damage>
+                    // MELEE <mob id> <ULTRAKILL damage> [<how far apart they were when it landed>]
                     var a = rest.Split(' ');
-                    if (levelPrepared) MeleeHit(int.Parse(a[0]), Mathf.RoundToInt(F(a[1])));
+                    if (levelPrepared) MeleeHit(int.Parse(a[0]), Mathf.RoundToInt(F(a[1])), a.Length > 2 ? F(a[2]) : 0f);
                     break;
                 }
                 case "SECX":
@@ -882,8 +885,10 @@ namespace UltraBridge
                     var nm = levelPrepared ? MonoSingleton<NewMovement>.Instance : null;
                     var a = rest.Split(' ');
                     if (nm == null || nm.dead) break;
-                    if (a.Length > 1 && a[1] == "void") nm.GetHurt(nm.hp * 10 + 999, false, 0f, ignoreInvincibility: true);
-                    else nm.GetHurt(Mathf.RoundToInt(F(a[0])), true);
+                    // both are hits Minecraft has already taken, absorption hearts and all: the pool here must not
+                    // pay for them a second time (McHurt and McVoid say so)
+                    if (a.Length > 1 && a[1] == "void") McVoid(nm);
+                    else McHurt(nm, Mathf.RoundToInt(F(a[0])));
                     break;
                 }
                 case "FULLHEAL":
@@ -2075,6 +2080,10 @@ namespace UltraBridge
         // length, so this is that reach plus a step: far enough that standing still or strafing around is no dodge,
         // close enough that walking away is. Refused from further out - the swing simply misses.
         const float MeleeReach = 5f;
+        // How much further than the measured distance a swing may be punched back for the parry to count: the fist
+        // meets the mob's middle a moment after Minecraft measured feet to feet, and a step of slack keeps a dodge
+        // from being granted for a single held key.
+        const float ParrySlack = 1.5f;
         static float EarlyParry => 0.4f + ReflexBonus * 0.5f;
         // a projectile that reaches V1 hangs in front of it this long before it hits, so any of Minecraft's projectiles
         // (even a fast arrow) can be parried; a Feedbacker punch up to EarlyParry before it arrives parries it too
@@ -2228,12 +2237,13 @@ namespace UltraBridge
 
         /// <summary>MELEE mob damage: a Minecraft mob's hit gets ULTRAKILL's parry flash and lands only if V1 doesn't
         /// punch that mob within the parry window.</summary>
-        void MeleeHit(int mobId, int damage)
+        void MeleeHit(int mobId, int damage, float reach)
         {
             var nm = MonoSingleton<NewMovement>.Instance;
             if (nm == null || nm.dead) return;
             if (proxies.TryGetValue(mobId, out var p) && p != null)
             {
+                if (reach > 0f) p.swingReach = Mathf.Max(MeleeReach, reach + ParrySlack);
                 if (p.pendingHurt == 0 && Time.time - p.punchedAt < EarlyParry)
                 {
                     // V1 punched it a moment before its swing: parried, as if the fist had met the swing
@@ -2258,7 +2268,7 @@ namespace UltraBridge
             }
             else
             {
-                nm.GetHurt(damage, true);
+                McHurt(nm, damage);
             }
         }
 
@@ -2279,16 +2289,52 @@ namespace UltraBridge
                 // The flash is the warning that this swing can be parried; whether it lands is still up to where V1
                 // is when the window closes. Backing away from it is a dodge, so the hit is dropped rather than
                 // granted on the strength of a decision Minecraft made 0.2 s ago and V1 has since walked out of.
-                if (p.center != null && Vector3.Distance(p.center.position, nm.transform.position) > MeleeReach)
+                if (p.center != null && Vector3.Distance(p.center.position, nm.transform.position) > p.swingReach)
                 {
                     p.hasPendingKnock = false;
                     continue;
                 }
-                if (!nm.dead) nm.GetHurt(d, true);
+                if (!nm.dead) McHurt(nm, d);
                 // the swing landed: so does its knockback
                 if (p.hasPendingKnock && !nm.dead) Knock(nm, p.pendingKnock, p.pendingKnockUp);
                 p.hasPendingKnock = false;
             }
+        }
+
+        /// <summary>A punch thrown: a Minecraft mob whose swing is still waiting to land, within the reach that swing
+        /// was measured at, is parried then and there. ULTRAKILL's own parry lands when the fist meets the enemy, but a
+        /// spear's thrust keeps several blocks of distance, so the window would close with the fist nowhere near the
+        /// mob and a landed hit on a V1 who did everything right. The nearest one only: a punch parries one enemy.</summary>
+        public void ParryOnPunch()
+        {
+            var nm = MonoSingleton<NewMovement>.Instance;
+            if (nm == null || nm.dead) return;
+            var at = nm.transform.position;
+            var facing = nm.transform.forward;
+            McProxy hit = null;
+            float best = float.MaxValue;
+            foreach (var p in proxies.Values)
+            {
+                if (p == null || p.center == null || p.eid == null || p.eid.dead) continue;
+                if (Time.time >= p.parryUntil) continue;
+                // the window only offers a parry while something is behind it (a shield-stopped swing still counts)
+                if (p.pendingHurt <= 0 && !p.swingBlocked) continue;
+                var to = p.center.position - at;
+                float d = to.magnitude;
+                if (d > p.swingReach || d >= best) continue;
+                // what the punch is thrown at: something behind V1 isn't parried, however close it is
+                if (Vector3.Dot(facing, to) < 0f) continue;
+                hit = p;
+                best = d;
+            }
+            if (hit == null) return;
+            hit.pendingHurt = 0;
+            hit.parryUntil = 0f;
+            hit.hasPendingKnock = false;
+            hit.swingBlocked = false;
+            try { MonoSingleton<FistControl>.Instance.currentPunch.Parry(false, hit.eid); }
+            catch (Exception e) { Plugin.Log.LogWarning("reach parry: " + e.Message); }
+            ReportDamage(hit, 5f, false, false, hit.center.position, true, 0);
         }
 
         // ------------------------------------------------------------ ULTRAKILL's enemies vs Minecraft's mobs
@@ -4111,6 +4157,9 @@ namespace UltraBridge
         static void Prefix(Punch __instance)
         {
             if (__instance.type == FistType.Standard) Bridge.lastParryPunch = Time.time;
+            // a swing that keeps its distance (a spear's thrust) would never meet the fist itself, so the window is
+            // checked as the punch goes out
+            Bridge.I?.ParryOnPunch();
         }
     }
 

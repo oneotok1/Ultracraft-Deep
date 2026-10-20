@@ -27,9 +27,9 @@ final class SteveMode {
 	private static String lastEffects = "";
 	private static long lastEffectsAt;
 	private static Vec3 lastPos;
-	// Steve's own health pool as ULTRAKILL last heard of it: his maximum (a Health Boost effect raises it) and
-	// his absorption hearts, both sent only when they change
-	private static int lastMax = -1, lastAbsorb = -1;
+	// Steve's own health pool as ULTRAKILL last heard of it: his maximum, sent only when it changes. His
+	// absorption hearts come from the server instead (it keeps them), so ULTRAKILL's own hits can spend them
+	private static int lastMax = -1;
 
 	private SteveMode() {}
 
@@ -53,23 +53,18 @@ final class SteveMode {
 		lastEffects = "";
 		lastPos = null;
 		lastMax = -1;
-		lastAbsorb = -1;
 	}
 
 	/**
-	 * Steve's maximum health and his absorption hearts, so ULTRAKILL can scale V1's health to them: a Health Boost
-	 * raises the bar V1's health is measured against, and absorption hearts are a second, dented first pool.
+	 * Steve's maximum health, so ULTRAKILL can scale V1's health to it: a Health Boost raises the bar V1's health is
+	 * measured against. His absorption hearts go the other way round - the server keeps those (they are what
+	 * ULTRAKILL's own hits are soaked with), and sends them to ULTRAKILL itself.
 	 */
 	private static void vitals(LocalPlayer p) {
 		int max = Math.round(p.getMaxHealth());
 		if (max != lastMax) {
 			lastMax = max;
 			UkLink.send("MC_MAX " + max);
-		}
-		int absorb = Math.round(p.getAbsorptionAmount());
-		if (absorb != lastAbsorb) {
-			lastAbsorb = absorb;
-			UkLink.send("ABSORB " + absorb);
 		}
 	}
 

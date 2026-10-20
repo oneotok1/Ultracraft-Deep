@@ -105,6 +105,19 @@ public final class UltracraftConfig {
 	public static boolean arenas = true;
 	/** The Cyber Grind takes V1 through its own arenas (GrindArenas) instead of fighting round the shop. */
 	public static boolean grindArenas = true;
+	/** Extra Blood Counts as Health Cap: V1's absorption hearts are the top of his health bar - his bar and its
+	 * number count them, and healing past his own maximum fills them back up. Off: they are a shield and nothing
+	 * else - damage eats them first, healing never refills them, and V1's own maximum is the top of the bar. */
+	public static boolean absorbCeiling = true;
+	/** Mob Damage Filter: which of Minecraft's mobs ULTRAKILL's side may touch at all - its weapons, its fist, its
+	 * enemies picking a target, the Whiplash, its blasts. A mob left out is invisible to all of it: it is never sent
+	 * over, so no stand-in for it exists there. Each group's own setting, and a mob can have its own on top. */
+	public static boolean dmgHostile = true;
+	public static boolean dmgNeutral = true;
+	public static boolean dmgPassive = true;
+	public static boolean dmgOther = true;
+	/** Mob Damage Filter: a mob's own setting (entity id -> allowed), over its group's. */
+	public static final Map<String, Boolean> dmgMobs = new TreeMap<>();
 	/** Minecraft waits for each of ULTRAKILL's frames (while ULTRAKILL keeps up), so the two stay in step. */
 	public static boolean lockStep = true;
 	/** Low-Latency Frames: ULTRAKILL hands each frame over as soon as it's drawn (less delay, a little less throughput). */
@@ -138,7 +151,8 @@ public final class UltracraftConfig {
 	private static final String[] KEYS = {"v1Height", "autoV1", "ukSpawns", "mcMobs", "sharpShop", "grindBest", "bosses", "bossMinutes", "bossDifficulty", "traitChance", "bossWarnSeconds", "bossIntros", "bossDeaths", "bossArenas",
 		"allGear", "playerBlockDamage", "enemyBlockDamage", "blastFireOut", "impactFrames", "launchUltrakill", "opShop", "ukFpsCap", "steveEnemies", "fightMusic", "bossThemes",
 		"calmMusic", "hushMcMusic", "styleRewards", "styleStreakText", "styleStreakTitle", "arenas", "grindArenas", "lockStep", "lowLatency",
-		"effects", "stainCap", "extraGore", "terrainRange", "ultrakillDir", "setupUltrakill", "teammateMarkers"};
+		"effects", "stainCap", "extraGore", "terrainRange", "ultrakillDir", "setupUltrakill", "teammateMarkers", "absorbCeiling",
+		"dmgHostile", "dmgNeutral", "dmgPassive", "dmgOther"};
 
 	private static final String COMMENT = "Ultracraft (most of this is on the Ultracraft settings screen): v1Height = ULTRAKILL render height (0 = full window, lower = faster);"
 		+ " autoV1 = become V1 automatically; ukSpawns = ULTRAKILL's enemies spawn in the dark; mcMobs = Minecraft's monsters spawn;"
@@ -146,10 +160,11 @@ public final class UltracraftConfig {
 		+ " bossMinutes = minutes of play between them; bossDifficulty = 0 by bosses beaten, 1-5 EASY to V1 MUST DIE; traitChance = percent of bosses with traits; bossWarnSeconds = warning before one arrives; allGear = every weapon without buying it;"
 		+ " playerBlockDamage / enemyBlockDamage = V1's / enemies' attacks break blocks; blastFireOut = V1's blasts put fire out; impactFrames = hitstop length (0.1 to 3);"
 		+ " launchUltrakill = start ULTRAKILL with Minecraft; opShop = upgrades go to 1500%; uk.* = ULTRAKILL settings used while playing Ultracraft;"
-		+ " fightMusic = off, random or a song of ULTRAKILL's soundtrack; cheat.* = cheats on; arenas = ULTRAKILL arenas generate in new chunks; grindArenas = the Cyber Grind runs through its own 50 arenas; lockStep = Minecraft waits for ULTRAKILL's frames;"
+		+ " fightMusic = off, random or a song of ULTRAKILL's soundtrack; cheat.* = cheats on; arenas = ULTRAKILL arenas generate in new chunks; grindArenas = the Cyber Grind runs through its own 50 arenas; lockStep = Minecraft waits for ULTRAKILL's frames; absorbCeiling = absorption hearts count as the top of V1's health (0: only a shield);"
 		+ " styleStreakText = the streak's number on screen, styleStreakTitle = the big one at every fifth kill (both off: neither);"
 		+ " effects = 2 high, 1 medium, 0 low; stainCap = blood stains kept on blocks (0 none); extraGore = Ultracraft's extra death blood; terrainRange = blocks of terrain sent to ULTRAKILL (64-128);"
-		+ " ultrakillDir = ULTRAKILL's folder, only if Ultracraft can't find it through Steam (it sets up BepInEx and the UltraBridge plugin there); setupUltrakill = you let Ultracraft set ULTRAKILL up (and keep its plugin up to date); teammateMarkers = the other players' names and health over ULTRAKILL's view";
+		+ " ultrakillDir = ULTRAKILL's folder, only if Ultracraft can't find it through Steam (it sets up BepInEx and the UltraBridge plugin there); setupUltrakill = you let Ultracraft set ULTRAKILL up (and keep its plugin up to date); teammateMarkers = the other players' names and health over ULTRAKILL's view;"
+		+ " dmgHostile / dmgNeutral / dmgPassive / dmgOther = whether ULTRAKILL's side may touch Minecraft's hostile, neutral, passive or other mobs at all (a mob it may not is never sent over: no weapon, fist, enemy, Whiplash or blast of ULTRAKILL's reaches it); dmg.<entity id> = one mob's own setting over its group's";
 
 	private UltracraftConfig() {}
 
@@ -224,6 +239,11 @@ public final class UltracraftConfig {
 			styleStreakTitle = bool(p, "styleStreakTitle", styleStreakTitle);
 			arenas = bool(p, "arenas", arenas);
 			grindArenas = bool(p, "grindArenas", grindArenas);
+			absorbCeiling = bool(p, "absorbCeiling", absorbCeiling);
+			dmgHostile = bool(p, "dmgHostile", dmgHostile);
+			dmgNeutral = bool(p, "dmgNeutral", dmgNeutral);
+			dmgPassive = bool(p, "dmgPassive", dmgPassive);
+			dmgOther = bool(p, "dmgOther", dmgOther);
 			lockStep = bool(p, "lockStep", lockStep);
 			lowLatency = bool(p, "lowLatency", lowLatency);
 			effects = Math.max(0, Math.min(2, Integer.parseInt(p.getProperty("effects", Integer.toString(effects)).trim())));
@@ -235,6 +255,7 @@ public final class UltracraftConfig {
 				if (k.startsWith("uk.")) ukPrefs.put(k.substring(3), p.getProperty(k).trim());
 				if (k.startsWith("bind.")) ukBinds.put(k.substring(5), Integer.parseInt(p.getProperty(k).trim()));
 				if (k.startsWith("cheat.")) cheats.put(k.substring(6), Boolean.parseBoolean(p.getProperty(k).trim()));
+				if (k.startsWith("dmg.")) dmgMobs.put(k.substring(4), Boolean.parseBoolean(p.getProperty(k).trim()));
 				if (k.startsWith("bossSong.")) bossSongs.put(k.substring(9), p.getProperty(k).trim());
 				if (k.startsWith("bossIntro.")) bossIntroAlts.put(k.substring(10), p.getProperty(k).trim());
 				// the old shared Encounter setting of a pair of fights: dropped, and the file written back without it
@@ -292,6 +313,11 @@ public final class UltracraftConfig {
 		p.setProperty("styleStreakTitle", Boolean.toString(styleStreakTitle));
 		p.setProperty("arenas", Boolean.toString(arenas));
 		p.setProperty("grindArenas", Boolean.toString(grindArenas));
+		p.setProperty("absorbCeiling", Boolean.toString(absorbCeiling));
+		p.setProperty("dmgHostile", Boolean.toString(dmgHostile));
+		p.setProperty("dmgNeutral", Boolean.toString(dmgNeutral));
+		p.setProperty("dmgPassive", Boolean.toString(dmgPassive));
+		p.setProperty("dmgOther", Boolean.toString(dmgOther));
 		p.setProperty("lockStep", Boolean.toString(lockStep));
 		p.setProperty("lowLatency", Boolean.toString(lowLatency));
 		p.setProperty("effects", Integer.toString(effects));
@@ -299,6 +325,7 @@ public final class UltracraftConfig {
 		p.setProperty("extraGore", Boolean.toString(extraGore));
 		p.setProperty("terrainRange", Integer.toString(terrainRange));
 		for (var e : cheats.entrySet()) p.setProperty("cheat." + e.getKey(), Boolean.toString(e.getValue()));
+		for (var e : dmgMobs.entrySet()) p.setProperty("dmg." + e.getKey(), Boolean.toString(e.getValue()));
 		for (var e : bossSongs.entrySet()) p.setProperty("bossSong." + e.getKey(), e.getValue());
 		for (var e : bossIntroAlts.entrySet()) p.setProperty("bossIntro." + e.getKey(), e.getValue());
 		for (var e : bossSets.entrySet()) p.setProperty("bossSet." + e.getKey(), e.getValue());
@@ -335,8 +362,9 @@ public final class UltracraftConfig {
 
 	/** What ULTRAKILL needs to know of these: OPTS key=value ... (sent on connecting and after every change). */
 	public static void sendOpts() {
-		UkLink.send(String.format(Locale.ROOT, "OPTS impact=%.2f fps=%d playerBlocks=%d enemyBlocks=%d lowlat=%d fx=%d gore=%d stains=%d", impactFrames, ukFpsNow(),
-			playerBlockDamage ? 1 : 0, enemyBlockDamage ? 1 : 0, lowLatency ? 1 : 0, effects, extraGore ? 1 : 0, stainCap > 0 ? 1 : 0));
+		UkLink.send(String.format(Locale.ROOT, "OPTS impact=%.2f fps=%d playerBlocks=%d enemyBlocks=%d lowlat=%d fx=%d gore=%d stains=%d pool=%d", impactFrames, ukFpsNow(),
+			playerBlockDamage ? 1 : 0, enemyBlockDamage ? 1 : 0, lowLatency ? 1 : 0, effects, extraGore ? 1 : 0, stainCap > 0 ? 1 : 0,
+			absorbCeiling ? 1 : 0));
 		BloodStains.setCap(stainCap);
 		for (var e : ukPrefs.entrySet()) UkLink.send("UKPREF " + e.getKey() + " " + e.getValue());
 		for (var e : ukBinds.entrySet()) if (!UcKeybindsScreen.isGun(e.getKey())) UkLink.send("UKBIND " + e.getKey() + " " + e.getValue());
