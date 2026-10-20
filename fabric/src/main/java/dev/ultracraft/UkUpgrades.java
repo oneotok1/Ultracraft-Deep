@@ -89,7 +89,7 @@ final class UkUpgrades {
 
 	/** Return to Sender: how much harder (and faster) a parried projectile comes back, x1 to x3. */
 	static float senderMult(UkProgress p) {
-		return new float[] {1f, 1.5f, 2f, 2.5f, 3f}[p.level("arm0.sender") - 1];
+		return new float[] {1f, 1.5f, 2f, 2.5f, 3f}[Math.max(0, p.level("arm0.sender") - 1)];
 	}
 
 	/** Worlds from before the upgrades split (rev=3, arm=2...): each weapon's old level is its Power now. */

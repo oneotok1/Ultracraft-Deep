@@ -102,11 +102,11 @@ final class UkCommands {
 				}))
 				.then(Commands.literal("set").requires(UkCommands::cheats).then(Commands.argument("upgrade", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(UkUpgrades.keys(), b))
-					.then(Commands.argument("level", IntegerArgumentType.integer(1, 20)).executes(c -> {
+					.then(Commands.argument("level", IntegerArgumentType.integer(0, 20)).executes(c -> {
 						String key = StringArgumentType.getString(c, "upgrade");
 						if (!UkUpgrades.TRACKS.containsKey(key)) return fail(c, "Unknown upgrade. Try: " + String.join(", ", UkUpgrades.keys()));
 						UkProgress p = progress(c);
-						p.setLevel(key, IntegerArgumentType.getInteger(c, "level"));
+						p.setBought(key, IntegerArgumentType.getInteger(c, "level"));
 						p.sendUpgrades();
 						return say(c, UkUpgrades.name(key) + " is level " + p.level(key) + " of " + UkUpgrades.TRACKS.get(key).max() + ".");
 					})))))
@@ -292,7 +292,12 @@ final class UkCommands {
 
 	private static int upgradeAll(CommandContext<CommandSourceStack> c, boolean max) {
 		UkProgress p = progress(c);
-		for (UkUpgrades.Track t : UkUpgrades.TRACKS.values()) p.setLevel(t.key(), max ? t.max() : 1);
+		// what was paid for goes with it: maxing hands out every level, resetting takes them all back
+		for (UkUpgrades.Track t : UkUpgrades.TRACKS.values()) {
+			if (max) p.setBought(t.key(), t.max());
+			else p.setLevel(t.key(), 1);
+		}
+		if (!max) p.forgetBought();
 		p.sendUpgrades();
 		return say(c, max ? "Every upgrade is maxed: " + (UltracraftConfig.opShop ? "1500%" : "300%") + " power and every special upgrade." : "Every upgrade is back to level 1.");
 	}

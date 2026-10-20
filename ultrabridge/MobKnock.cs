@@ -60,17 +60,19 @@ namespace UltraBridge
             var h = new Harmony("dev.ultracraft.ultrabridge.mobknock");
             Patch(h, typeof(SwingCheck2), "CheckEidCollision", nameof(Swing));
             Patch(h, typeof(Explosion), "Collide", nameof(Blast));
-            Patch(h, typeof(PhysicalShockwave), "CheckCollision", nameof(Shockwave));
+            Patch(h, typeof(PhysicalShockwave), "CheckCollision", nameof(Shockwave), nameof(ShockwaveHit));
             Patch(h, typeof(VirtueInsignia), "OnTriggerEnter", nameof(Pillar));
         }
 
-        static void Patch(Harmony h, Type t, string method, string prefix)
+        static void Patch(Harmony h, Type t, string method, string prefix, string postfix = null)
         {
             try
             {
                 var m = AccessTools.Method(t, method);
                 if (m == null) { Plugin.Log.LogWarning("mob knock: no " + t.Name + "." + method); return; }
-                h.Patch(m, prefix: new HarmonyMethod(typeof(MobKnock), prefix), finalizer: new HarmonyMethod(typeof(MobKnock), nameof(Done)));
+                h.Patch(m, prefix: new HarmonyMethod(typeof(MobKnock), prefix),
+                    postfix: postfix != null ? new HarmonyMethod(typeof(MobKnock), postfix) : null,
+                    finalizer: new HarmonyMethod(typeof(MobKnock), nameof(Done)));
             }
             catch (Exception e) { Plugin.Log.LogWarning("mob knock " + t.Name + ": " + e.Message); }
         }
@@ -95,6 +97,20 @@ namespace UltraBridge
             if (!__instance.enemy) return;
             Behind(Vector3.up, 30f, 30f);
             source = "shockwave";
+        }
+
+        /// <summary>V1's own landing shockwave (GroundCheck spawns it when the slam was held, and it is harmless): what
+        /// it reaches is thrown straight up, harder the longer the slam was held - its force carries slamForce. It is not
+        /// an enemy's, so the hit reaches the mob as "explosion" and the launch is taken here instead.</summary>
+        static void ShockwaveHit(PhysicalShockwave __instance, Collider col)
+        {
+            if (__instance.enemy || __instance.fading || col == null || Bridge.I == null) return;
+            if (col.gameObject.layer != 10) return;
+            var idc = col.gameObject.GetComponent<EnemyIdentifierIdentifier>();
+            var eid = idc != null ? idc.eid : null;
+            var p = eid != null ? eid.GetComponent<McProxy>() : null;
+            if (p == null) return;
+            Bridge.I.SlamShock(p, __instance.force);
         }
 
         static void Pillar(VirtueInsignia __instance)
@@ -141,6 +157,31 @@ namespace UltraBridge
             m = Vector3.ClampMagnitude(m, 4f);
             Net.Send("MKNOCK " + p.id + " " + S(m.x) + " " + S(m.y) + " " + S(m.z));
             if (mobKnockLogs++ < MobKnockLogCap) Plugin.Log.LogInfo("mob knock (" + MobKnock.source + "): " + p.type + " " + m.ToString("F2") + " (V1 mass " + mass + ")");
+        }
+
+        /// <summary>V1's own landing shockwave reached this mob: it is thrown straight up, as ULTRAKILL throws its own
+        /// enemies, and only a light one (the ones the Whiplash reels in) - a heavy one stands its ground. The lift is
+        /// the shockwave's force, which GroundCheck scales by the slam's slamForce: holding the slam longer throws
+        /// higher. Harmless either way (the slam wave's own damage is zero).</summary>
+        public void SlamShock(McProxy p, float force)
+        {
+            if (p == null || p.type == "v1" || p.type == "player" || p.type == "end_crystal") return;
+            if (!levelPrepared || !originSet || !Net.Connected) return;
+            if (HeavyMob(p)) return;
+            if (mobKnockedAt.TryGetValue(p.id, out var at) && Time.time - at < 0.2f) return;
+            var nm = MonoSingleton<NewMovement>.Instance;
+            float mass = nm != null && nm.rb != null ? nm.rb.mass : 1f;
+            // ULTRAKILL's shockwave hands its enemies Vector3.up * force * 2 (PhysicalShockwave.CheckCollision), and
+            // NewMovement.Launch turns that into an impulse of 8 on V1's own body - the same launch, straight up
+            var v = Vector3.up * (Mathf.Clamp(force * 2f, 0f, 1000f) * 8f / Mathf.Max(0.01f, mass));
+            if (mobKnockedAt.Count > 256) mobKnockedAt.Clear();
+            mobKnockedAt[p.id] = Time.time;
+            var m = McDir(v) / 20f;
+            m.y *= MobLift;
+            m = Vector3.ClampMagnitude(m, 4f);
+            if (m.y < 0.05f) return;
+            Net.Send("MKNOCK " + p.id + " " + S(m.x) + " " + S(m.y) + " " + S(m.z));
+            if (mobKnockLogs++ < MobKnockLogCap) Plugin.Log.LogInfo("mob knock (slam wave): " + p.type + " " + m.ToString("F2") + " (force " + force.ToString("F1") + ", V1 mass " + mass + ")");
         }
     }
 }

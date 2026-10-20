@@ -28,7 +28,12 @@ namespace UltraBridge
     {
         public class UpTrack
         {
-            public int level = 1, max = 1, cost;
+            /// <summary>What it is set to now (lowered levels rest, and do nothing, without losing what was paid).</summary>
+            public int level = 1;
+            /// <summary>The highest level paid for: the level buttons can't go back above it, so a lowered upgrade is
+            /// restored for nothing instead of being bought again.</summary>
+            public int bought = 1;
+            public int max = 1, cost;
         }
 
         /// <summary>Every upgrade's level, how far it goes and what the next level costs (UPGRADES).</summary>
@@ -74,11 +79,10 @@ namespace UltraBridge
         /// <summary>An upgrade's level, as far as it goes now (levels bought in the OP Shop rest while it's off).</summary>
         public static int UpLevel(string key) => key != null && UcUp.TryGetValue(key, out var t) ? Mathf.Clamp(t.level, 1, Mathf.Max(1, t.max)) : 1;
 
-        static float At(float[] table, string key, int level = 0)
-        {
-            if (level <= 0) level = UpLevel(key);
-            return table[Mathf.Clamp(level - 1, 0, table.Length - 1)];
-        }
+        /// <summary>Level 1 is row 0 (the base value: x1, or nothing), and a lowered upgrade reads the lower row.</summary>
+        static float At(float[] table, string key) => At(table, UpLevel(key));
+
+        static float At(float[] table, int level) => table[Mathf.Clamp(level - 1, 0, table.Length - 1)];
 
         /// <summary>How hard a weapon or arm hits (rev, sho, nai, rai, rock, arm0, arm1, arm2): 0.4 to 3.</summary>
         public static float Power(string group) => group == null ? 1f : At(PowerTable, group + ".power");
@@ -142,28 +146,28 @@ namespace UltraBridge
             string track = key.Substring(key.IndexOf('.') + 1);
             switch (track)
             {
-                case "power": return Mathf.RoundToInt(At(PowerTable, key, level) * 100f) + "% damage";
+                case "power": return Mathf.RoundToInt(At(PowerTable, level) * 100f) + "% damage";
                 case "rate":
                 case "charge":
-                case "reel": return "x" + At(RateTable, key, level).ToString("0.##") + " speed";
+                case "reel": return "x" + At(RateTable, level).ToString("0.##") + " speed";
                 case "payload":
-                case "shockwave": return Mathf.RoundToInt(At(SizeTable, key, level) * 100f) + "% size";
-                case "reflex": return "+" + Mathf.RoundToInt(At(ReflexTable, key, level) * 1000f) + " ms";
-                case "sender": return "x" + At(SenderTable, key, level).ToString("0.#") + " return";
-                case "demolition": return At(DemolitionTable, key, level).ToString("0.#") + " blocks";
-                case "barbs": return "x" + At(BarbsTable, key, level).ToString("0.#") + " hook damage";
-                case "bloodfist": return level <= 1 ? "off" : "+" + At(BloodfistTable, key, level) + " HP a hit";
-                case "arc": return level <= 1 ? "off" : At(ArcTable, key, level) + " arcs, " + At(ArcDamageTable, key, level).ToString("0.##") + " damage";
-                case "counter": return level <= 1 ? "off" : Mathf.RoundToInt(At(CounterTable, key, level) * 100f) + "% blast";
-                case "adrenaline": return level <= 1 ? "off" : "+" + At(AdrenalineTable, key, level) + " stamina" + (level >= 5 ? ", +25 HP" : "");
-                case "detonator": return level <= 1 ? "off" : Mathf.RoundToInt(At(DetonatorTable, key, level) * 100f) + "% blast";
-                case "seismic": return level <= 1 ? "off" : Mathf.RoundToInt(At(SeismicTable, key, level) * 100f) + "% blast";
-                case "ironclad": return level <= 1 ? "off" : "-" + Mathf.RoundToInt(At(IroncladTable, key, level) * 100f) + "% damage taken";
-                case "overcharge": return "x" + At(RateTable, key, level).ToString("0.##") + " recharge";
-                case "grapple": return level <= 1 ? "off" : At(GrappleTable, key, level) + " yank speed";
-                case "livewire": return level <= 1 ? "off" : At(LiveWireTable, key, level).ToString("0.#") + " damage/s";
-                case "slingshot": return level <= 1 ? "off" : "+" + At(SlingshotTable, key, level) + " launch";
-                case "ripcord": return level <= 1 ? "off" : Mathf.RoundToInt(At(RipcordTable, key, level) * 100f) + "% blast";
+                case "shockwave": return Mathf.RoundToInt(At(SizeTable, level) * 100f) + "% size";
+                case "reflex": return "+" + Mathf.RoundToInt(At(ReflexTable, level) * 1000f) + " ms";
+                case "sender": return "x" + At(SenderTable, level).ToString("0.#") + " return";
+                case "demolition": return At(DemolitionTable, level).ToString("0.#") + " blocks";
+                case "barbs": return "x" + At(BarbsTable, level).ToString("0.#") + " hook damage";
+                case "bloodfist": return level <= 1 ? "off" : "+" + At(BloodfistTable, level) + " HP a hit";
+                case "arc": return level <= 1 ? "off" : At(ArcTable, level) + " arcs, " + At(ArcDamageTable, level).ToString("0.##") + " damage";
+                case "counter": return level <= 1 ? "off" : Mathf.RoundToInt(At(CounterTable, level) * 100f) + "% blast";
+                case "adrenaline": return level <= 1 ? "off" : "+" + At(AdrenalineTable, level) + " stamina" + (level >= 5 ? ", +25 HP" : "");
+                case "detonator": return level <= 1 ? "off" : Mathf.RoundToInt(At(DetonatorTable, level) * 100f) + "% blast";
+                case "seismic": return level <= 1 ? "off" : Mathf.RoundToInt(At(SeismicTable, level) * 100f) + "% blast";
+                case "ironclad": return level <= 1 ? "off" : "-" + Mathf.RoundToInt(At(IroncladTable, level) * 100f) + "% damage taken";
+                case "overcharge": return "x" + At(RateTable, level).ToString("0.##") + " recharge";
+                case "grapple": return level <= 1 ? "off" : At(GrappleTable, level) + " yank speed";
+                case "livewire": return level <= 1 ? "off" : At(LiveWireTable, level).ToString("0.#") + " damage/s";
+                case "slingshot": return level <= 1 ? "off" : "+" + At(SlingshotTable, level) + " launch";
+                case "ripcord": return level <= 1 ? "off" : Mathf.RoundToInt(At(RipcordTable, level) * 100f) + "% blast";
             }
             return "";
         }
@@ -223,6 +227,9 @@ namespace UltraBridge
                 if (!UcUp.TryGetValue(p[0], out var t)) UcUp[p[0]] = t = new UpTrack();
                 else if (lv > t.level) rose = true;
                 t.level = lv;
+                // the highest level paid for, which only ever grows (OLDER SAVES and the reset path send no such field)
+                if (v.Length > 3 && int.TryParse(v[3], out var bought)) t.bought = Mathf.Max(lv, bought);
+                else t.bought = Mathf.Max(t.bought, lv);
                 if (v.Length > 1 && int.TryParse(v[1], out var max)) t.max = max;
                 if (v.Length > 2 && int.TryParse(v[2], out var cost)) t.cost = cost;
             }

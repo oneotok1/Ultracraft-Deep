@@ -133,7 +133,7 @@ namespace UltraBridge
                     UcGear.Add("arm0");
                     UcAllGear = false;
                     Equips.Clear();
-                    foreach (var t in UcUp.Values) t.level = 1;
+                    foreach (var t in UcUp.Values) { t.level = 1; t.bought = 1; }
                     gearKnown = false;
                     HandleSky("-");
                     if (levelPrepared) RefreshLoadout();
@@ -416,17 +416,38 @@ namespace UltraBridge
             public GameObject page;
             public readonly Dictionary<string, Transform> buttons = new Dictionary<string, Transform>();
             public TMP_Text title, text;
+            /// <summary>The P V1 has, on this page too (the weapons page gets one from each weapon window; this page has none).</summary>
+            public MoneyText money;
+            /// <summary>The shop's own P label on the top bar (a sibling of the pages), shown or hidden with the page.</summary>
+            public GameObject moneyGo;
+            /// <summary>The top strip's own bar that carries the P (the shop cuts this one out per page).</summary>
+            public Transform moneyBar;
+            public Vector2 moneyHome;
             public readonly List<UpgradeBuy> buys = new List<UpgradeBuy>();
             public string group = "rev";
             /// <summary>Which of the picked weapon's or arm's upgrades the Buy button buys.</summary>
             public int track;
+            /// <summary>The button the window came with (Sandbox's Enter), kept as the source the five others are copied from.</summary>
+            public RectTransform source;
+            /// <summary>The text area and its row, which have to be moved up as the buttons take their room, and where
+            /// they were before that (the shift is redone whenever the page is shown, so it has to start from these).</summary>
+            public RectTransform inset, row;
+            public Vector2 insetBase, rowBase;
+            /// <summary>The drop-down that wraps the text, so the shrinking is not clamped straight back.</summary>
+            public LayoutElement drop;
+            public float dropBase;
+            /// <summary>The source button's height, width and gap, kept for the re-fit every time the page is shown.</summary>
+            public float bh, bw, bgap;
         }
 
         class UpgradeBuy
         {
+            public RectTransform rt;
             public TMP_Text text;
             public Image image;
             public ShopButton sb;
+            /// <summary>Level buttons keep the colour the update set; the others are reset there.</summary>
+            public bool level;
         }
 
         readonly List<UpgradePage> upgradePages = new List<UpgradePage>();
@@ -491,8 +512,15 @@ namespace UltraBridge
             page.name = "Upgrades";
             page.SetActive(false);
             foreach (var c in page.GetComponents<ShopGearChecker>()) DestroyImmediate(c);
+            // the weapons page's own top bar carries the P, and so does every weapon window. The windows go, the bar
+            // stays (otherwise this page would have no dosh on it at all)
             var drop = new List<GameObject>();
-            foreach (Transform child in page.transform) if (child.name != "Weapons Panel") drop.Add(child.gameObject);
+            foreach (Transform child in page.transform)
+            {
+                bool money = child.GetComponentInChildren<MoneyText>(true) != null;
+                bool window = child.name.IndexOf("Window", StringComparison.Ordinal) >= 0;
+                if (child.name != "Weapons Panel" && !(money && !window)) drop.Add(child.gameObject);
+            }
             foreach (var d in drop) DestroyImmediate(d);
             var panel = page.transform.Find("Weapons Panel");
             if (panel == null) return;
@@ -585,6 +613,64 @@ namespace UltraBridge
             }
             var titleT = info.transform.Find("Title");
             up.title = titleT != null ? titleT.GetComponent<TMP_Text>() : null;
+            // the P: the shop keeps its own label on the top bar, which is a sibling of the pages rather than part of
+            // any one of them (Canvas/Background/Money Display), so this page shows that very node instead of a copy --
+            // that is the label the Weapons page draws, in the place and with the manner it appears there
+            var md = go.transform.Find("Canvas/Background/Money Display");
+            up.money = md != null ? md.GetComponentInChildren<MoneyText>(true) : null;
+            // the label sits on its own bar (the HudOpenEffect is on the bar, not on the label), and the shop cuts that
+            // bar out of the top strip every time a page is chosen - so this page asks the bar to do it again for itself
+            up.moneyGo = md != null ? md.gameObject : null;
+            // the bar is the label's own parent (Money Display: a rect, a background image and the open effect);
+            // one step higher is the whole shop background, which would unfold the entire screen
+            // Money Display is the bar itself: its own rect, its own background image and the label on it. It carries no
+            // effect of its own -- the only HudOpenEffect nearby is on the shop Background, one level up, and playing that
+            // unfolds the whole screen -- so this page switches the bar on and leaves the rest of the shop alone.
+            up.moneyBar = up.moneyGo != null ? up.moneyGo.transform : null;
+            up.moneyHome = up.moneyBar is RectTransform mbr ? mbr.anchoredPosition : Vector2.zero;
+            // nothing to reuse (a shop laid out differently): a copy of any label is put under the title instead
+            if (up.money == null && titleT != null && titleT.parent != null)
+            {
+                MoneyText src = null;
+                foreach (var mt in FindObjectsOfType<MoneyText>(true))
+                    if (mt != null && mt.gameObject != info && mt.transform.IsChildOf(info.transform) == false) { src = mt; break; }
+                GameObject moneyGo;
+                if (src != null)
+                {
+                    moneyGo = Instantiate(src.gameObject, titleT.parent, false);
+                    moneyGo.name = "Upgrade Money";
+                    moneyGo.SetActive(true);
+                }
+                else
+                {
+                    moneyGo = new GameObject("Upgrade Money", typeof(RectTransform), typeof(TextMeshProUGUI));
+                    var plain = moneyGo.GetComponent<TextMeshProUGUI>();
+                    var tt = titleT.GetComponent<TMP_Text>();
+                    if (tt != null)
+                    {
+                        plain.font = tt.font;
+                        plain.fontSharedMaterial = tt.fontSharedMaterial;
+                        plain.fontSize = tt.fontSize;
+                    }
+                    else plain.fontSize = 20f;
+                    plain.alignment = TextAlignmentOptions.Right;
+                    plain.color = Color.white;
+                    plain.raycastTarget = false;
+                }
+                var mrt = (RectTransform)moneyGo.transform;
+                mrt.SetParent(titleT, false);
+                mrt.SetAsLastSibling();
+                mrt.anchorMin = new Vector2(1f, 0.5f);
+                mrt.anchorMax = new Vector2(1f, 0.5f);
+                mrt.pivot = new Vector2(1f, 0.5f);
+                float th = titleT is RectTransform trt ? trt.rect.height : 20f;
+                mrt.sizeDelta = new Vector2(Mathf.Max(160f, mrt.sizeDelta.x), Mathf.Max(20f, th));
+                mrt.anchoredPosition = new Vector2(-10f, 0f);
+                mrt.localScale = Vector3.one;
+                up.money = moneyGo.GetComponent<MoneyText>();
+                if (up.money == null) up.money = moneyGo.AddComponent<MoneyText>();
+                up.money.UpdateMoney();
+            }
             var textT = info.transform.Find("Panel/Text Inset/Text");
             up.text = textT != null ? textT.GetComponent<TMP_Text>() : null;
             if (up.text != null)
@@ -593,47 +679,65 @@ namespace UltraBridge
                 up.text.fontSizeMin = 5f;
                 up.text.fontSizeMax = Mathf.Max(up.text.fontSize, 8f);
             }
-            // where the one Enter button was: < and > side by side (which upgrade), and above them the Buy button; the
-            // list of upgrades above those
+            // the text area, its row and the drop-down over it all have to give up the room the buttons take
+            var insetIn = info.transform.Find("Panel/Text Inset") as RectTransform;
+            if (insetIn != null)
+            {
+                up.inset = insetIn;
+                up.row = insetIn.parent as RectTransform;
+                up.drop = up.row != null ? up.row.GetComponent<LayoutElement>() : null;
+            }
+            // where the one Enter button was: three rows. Buy alone at the top, then which upgrade (^ above, v below),
+            // then its level (- and +). The original button is switched off and only used as the source of the copies:
+            // something in the panel owns its position, so moving it by hand does nothing.
             var enter = info.transform.Find("Panel/Enter Button") as RectTransform;
             if (enter != null)
             {
+                up.source = enter;
+                // the button stays where the panel puts it and becomes Buy; the four small ones are copies in the row
+                // just above it, which is the only room this window has to spare
+                Rewire(enter, () => BuyUpgrade(up));
                 float h = enter.rect.height, w = enter.rect.width, gap = Mathf.Max(2f, h * 0.15f);
-                var inset = info.transform.Find("Panel/Text Inset") as RectTransform;
-                if (inset != null) inset.offsetMin += new Vector2(0f, h + gap);
-                for (int i = 0; i < 3; i++)
+                float quarter = (w - 3f * gap) / 4f;
+                for (int i = 1; i <= 4; i++)
                 {
-                    var bt = i == 2 ? enter : Instantiate(enter.gameObject, enter.parent, false).transform as RectTransform;
+                    var bt = Instantiate(enter.gameObject, enter.parent, false).transform as RectTransform;
                     bt.name = "Upgrade Button " + i;
-                    if (i == 0)
+                    bt.gameObject.SetActive(true);
+                    bt.sizeDelta = new Vector2(bt.sizeDelta.x - (w - quarter), bt.sizeDelta.y);
+                    // left of each pair is the one that goes back (^ up the list, - down a level), right is on
+                    int step = i % 2 == 1 ? -1 : 1;
+                    if (i <= 2) Rewire(bt, () =>
                     {
-                        // Buy, on top
-                        bt.anchoredPosition = enter.anchoredPosition + new Vector2(0f, h + gap);
-                        Rewire(bt, () => BuyUpgrade(up));
-                    }
-                    else
+                        // which upgrade Buy buys (it wraps round the list)
+                        int n = TracksOf(up.group).Length;
+                        up.track = ((up.track + step) % n + n) % n;
+                        UpgradeTexts();
+                    });
+                    else Rewire(bt, () => SetLevel(up, step));
+                    var small = new UpgradeBuy { rt = bt, level = i >= 3, text = bt.GetComponentInChildren<TMP_Text>(true), image = bt.GetComponent<Image>(), sb = bt.GetComponent<ShopButton>() };
+                    if (small.text != null)
                     {
-                        // < (1) and > (2), half as wide, below it
-                        float half = (w - gap) / 2f;
-                        bt.sizeDelta = new Vector2(bt.sizeDelta.x - (w - half), bt.sizeDelta.y);
-                        bt.anchoredPosition = enter.anchoredPosition + new Vector2((i == 1 ? -1f : 1f) * (half + gap) / 2f, 0f);
-                        int step = i == 1 ? -1 : 1;
-                        Rewire(bt, () =>
-                        {
-                            int n = TracksOf(up.group).Length;
-                            up.track = ((up.track + step) % n + n) % n;
-                            UpgradeTexts();
-                        });
+                        small.text.enableAutoSizing = true;
+                        small.text.fontSizeMin = 5f;
+                        small.text.fontSizeMax = Mathf.Max(small.text.fontSize, 8f);
                     }
-                    var buy = new UpgradeBuy { text = bt.GetComponentInChildren<TMP_Text>(true), image = bt.GetComponent<Image>(), sb = bt.GetComponent<ShopButton>() };
-                    if (buy.text != null)
-                    {
-                        buy.text.enableAutoSizing = true;
-                        buy.text.fontSizeMin = 5f;
-                        buy.text.fontSizeMax = Mathf.Max(buy.text.fontSize, 8f);
-                    }
-                    up.buys.Add(buy);
+                    if (small.image != null) small.image.color = Color.white;
+                    up.buys.Add(small);
                 }
+                var big = new UpgradeBuy { rt = enter, level = false, text = enter.GetComponentInChildren<TMP_Text>(true), image = enter.GetComponent<Image>(), sb = enter.GetComponent<ShopButton>() };
+                if (big.text != null)
+                {
+                    big.text.enableAutoSizing = true;
+                    big.text.fontSizeMin = 5f;
+                    big.text.fontSizeMax = Mathf.Max(big.text.fontSize, 8f);
+                }
+                if (big.image != null) big.image.color = Color.white;
+                up.buys.Insert(0, big);
+                up.bh = h;
+                up.bw = w;
+                up.bgap = gap;
+                FitButtons(up, true);
             }
 
             // its button on the main menu, under Weapons
@@ -650,17 +754,76 @@ namespace UltraBridge
             {
                 foreach (var g in hide) if (g != null) g.SetActive(false);
                 page.SetActive(true);
+                // the bar is the shop's own, so it is only ever brought back, never remade: switch it on up the tree
+                // (its parent may be off while no page is showing) and let its own effect cut it out of the top strip
+                OpenMoneyBar(up);
                 UpgradeTexts();
+                // shown again: the panel has just run its layout over the buttons and the text, so put them back,
+                // then say what the rects really came out as (this is the read that matters, after the layout pass)
+                FitButtons(up, false);
             });
             upgradePages.Add(up);
             UpgradeTexts();
+        }
+
+        /// <summary>Puts the five buttons in their three rows (Buy on top, then ^ and v, then - and +) and takes the
+        /// room they need out of the text above them. The panel runs its own layout every time the page is shown and
+        /// that puts the text back, so this is redone each time; the numbers it moved from are kept in the page.</summary>
+        void FitButtons(UpgradePage up, bool first)
+        {
+            if (up.source == null || up.buys.Count < 5) return;
+            var parent = up.source.parent as RectTransform;
+            if (parent == null) return;
+            float h = up.bh, w = up.bw, gap = up.bgap;
+            float quarter = (w - 3f * gap) / 4f, lift = h + gap;
+            Vector2 origin = up.source.anchoredPosition;
+            if (first)
+            {
+                if (up.inset != null) up.insetBase = up.inset.offsetMin;
+                if (up.row != null) up.rowBase = up.row.anchoredPosition;
+                if (up.drop != null) up.dropBase = up.drop.preferredHeight;
+            }
+            // four small buttons in one row just above Buy, in the order ^ v - +
+            for (int i = 1; i < up.buys.Count && i <= 4; i++)
+            {
+                var rt = up.buys[i].rt;
+                if (rt == null) continue;
+                rt.anchoredPosition = origin + new Vector2((i - 2.5f) * (quarter + gap), lift);
+            }
+            // the text gives up the row the small buttons took (the inset is the only thing that decides where the
+            // text lands; the log says what the rect came out as)
+            if (up.inset != null) up.inset.offsetMin = up.insetBase + new Vector2(0f, lift);
+            if (up.drop != null) up.drop.preferredHeight = Mathf.Max(20f, up.dropBase - lift);
+        }
+
+        /// <summary>Brings the P back for a page. The label lives on the shop's top strip, on its own bar, and that bar
+        /// carries the effect that cuts it out of the strip - so it is switched on up the tree and asked to play again, which
+        /// is exactly what the shop does when a page is chosen. Nothing is created or moved here.</summary>
+        void OpenMoneyBar(UpgradePage up)
+        {
+            if (up.money == null || up.moneyBar == null) return;
+            for (var t = up.moneyBar; t != null && !t.gameObject.activeSelf; t = t.parent) t.gameObject.SetActive(true);
+            if (up.moneyBar is RectTransform br) br.anchoredPosition = up.moneyHome;
+            up.money.UpdateMoney();
+        }
+
+        /// <summary>Moves the picked upgrade down (step -1) or up. It rests at the level it was set to, and nothing is
+        /// refunded: it can only go back up to the highest level paid for, which comes back for nothing.</summary>
+        void SetLevel(UpgradePage up, int step)
+        {
+            var all = TracksOf(up.group);
+            var key = all[Mathf.Clamp(up.track, 0, all.Length - 1)];
+            if (!UcUp.TryGetValue(key, out var t)) return;
+            int lv = Mathf.Clamp(t.level, 1, Mathf.Max(1, t.max)) + step;
+            if (lv < 1 || lv > Mathf.Clamp(t.bought, 1, Mathf.Max(1, t.max)) || lv == t.level) return;
+            Net.Send("UPSET " + key + " " + lv);
         }
 
         void BuyUpgrade(UpgradePage up)
         {
             var all = TracksOf(up.group);
             var key = all[Mathf.Clamp(up.track, 0, all.Length - 1)];
-            if (!UcUp.TryGetValue(key, out var t) || t.level >= t.max || Spendable < t.cost) return;
+            if (!UcUp.TryGetValue(key, out var t) || t.bought >= t.max || Spendable < t.cost) return;
             // Minecraft checks, takes the P and answers with UPGRADES and MONEY (nothing with Infinite P)
             Net.Send("UPBUY " + key + (InfiniteP ? " free" : ""));
         }
@@ -711,19 +874,29 @@ namespace UltraBridge
                     if (plv < pmax) sb.Append("\n<color=#888888>Next: ").Append(UpEffect(picked, plv + 1)).Append("</color>");
                     up.text.text = sb.ToString().TrimEnd();
                 }
+                if (up.money != null) up.money.UpdateMoney();
                 for (int i = 0; i < up.buys.Count; i++)
                 {
                     var buy = up.buys[i];
                     if (i > 0)
                     {
-                        if (buy.text != null) buy.text.text = i == 1 ? "<" : ">";
-                        if (buy.image != null) buy.image.color = Color.white;
-                        if (buy.sb != null) buy.sb.failure = false;
+                        // rows 1 and 2: ^ / v pick the upgrade, - / + its level
+                        if (buy.text != null) buy.text.text = i == 1 ? "^" : i == 2 ? "v" : i == 3 ? "-" : "+";
+                        // the level buttons grey out where they would do nothing
+                        if (buy.level)
+                        {
+                            UcUp.TryGetValue(picked, out var lt);
+                            int lv = lt == null ? 1 : Mathf.Clamp(lt.level, 1, Mathf.Max(1, lt.max));
+                            int top = lt == null ? 1 : Mathf.Clamp(lt.bought, 1, Mathf.Max(1, lt.max));
+                            bool off = i == 3 ? lv <= 1 : lv >= top;
+                            if (buy.sb != null) buy.sb.failure = off;
+                            if (buy.image != null) buy.image.color = off ? Color.red : Color.white;
+                        }
                         continue;
                     }
                     var key = picked;
                     UcUp.TryGetValue(key, out var tr);
-                    bool maxed = tr == null || tr.level >= tr.max;
+                    bool maxed = tr == null || tr.bought >= tr.max;
                     bool can = !maxed && Spendable >= tr.cost;
                     if (buy.text != null)
                         buy.text.text = maxed ? TrackName(key) + ": Maxed"

@@ -582,6 +582,15 @@ public final class ServerOps {
 				p.sendMoney();
 				p.sendUpgrades();
 			}
+			case "UPSET" -> {
+				// UPSET key level: the Upgrades page's level buttons. A lowered level rests until raised again; a
+				// downgrade refunds nothing and it can't be raised past the highest level paid for.
+				if (a.length < 3 || !UkUpgrades.TRACKS.containsKey(a[1])) break;
+				UkProgress p = UkProgress.get(sp);
+				// only between 1 and what was paid for: setting it higher would hand out a level nobody bought
+				p.setLevel(a[1], Math.min(Integer.parseInt(a[2].trim()), p.bought(a[1])));
+				p.sendUpgrades();
+			}
 			case "BOSSPOS" -> UkBosses.moved(sp, Integer.parseInt(a[1]), new Vec3(Double.parseDouble(a[2]), Double.parseDouble(a[3]), Double.parseDouble(a[4])),
 				a.length > 5 ? Float.parseFloat(a[5]) : -1f);
 			// SPECTATE 1|-1: down in a boss fight, watch the next (or previous) teammate still standing

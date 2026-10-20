@@ -84,6 +84,9 @@ namespace UltraBridge
         public float pendingKnockUp = -1f;
         public bool hasPendingKnock;
         public float parriedAt = -10f;
+        // this swing was stopped dead (a raised shield, armour that took all of it): ULTRAKILL still flashes the
+        // mob and offers the parry, but the hit itself never lands
+        public bool swingBlocked;
         // when V1's fist last landed on it: a punch just before its swing still parries
         public float punchedAt = -10f;
         public readonly CancellationTokenSource life = new CancellationTokenSource();
@@ -541,15 +544,18 @@ namespace UltraBridge
             float yaw = e.y + 180f;
             float pitch = e.x > 180f ? e.x - 360f : e.x;
             float roll = e.z > 180f ? e.z - 360f : e.z;
+            SyncMax(nm); // a Health Boost that arrived while no V1 existed takes effect here
             var v = nm.rb.velocity;
             Net.Send("P " + S(eye.x) + " " + S(eye.y) + " " + S(eye.z) + " " + S(yaw) + " " + S(pitch) + " " + S(-roll) + " " + S(cc.cam.fieldOfView)
                      + " " + S(feet.x) + " " + S(feet.y) + " " + S(feet.z) + " " + S(v.x / K) + " " + S(v.y / K) + " " + S(-v.z / K)
                      + " " + (nm.gc != null && nm.gc.onGround ? 1 : 0) + " " + (nm.sliding ? 1 : 0));
-            if (nm.hp != lastHp)
+            if (nm.hp != lastHp || MaxChanged)
             {
                 lastHp = nm.hp;
-                // HP <hp> <dead> <max>: Minecraft's hearts mirror it (so its own regeneration knows when to heal)
-                Net.Send("HP " + nm.hp + " " + (nm.dead ? 1 : 0) + " " + MaxHp(nm));
+                MaxChanged = false;
+                // HP <hp> <dead> <max>: Minecraft's hearts mirror it (so its own regeneration knows when to heal);
+                // max is V1's maximum scaled to Steve's, not the difficulty's own (see Vitals.cs)
+                Net.Send("HP " + nm.hp + " " + (nm.dead ? 1 : 0) + " " + UkMax);
             }
         }
 
@@ -560,6 +566,10 @@ namespace UltraBridge
             string rest = sp < 0 ? "" : line.Substring(sp + 1);
             switch (cmd)
             {
+                case "MC_MAX":
+                case "ABSORB":
+                    HandleVitals(cmd, rest);
+                    break;
                 case "CONNECTED":
                     Plugin.Log.LogInfo("Minecraft connected");
                     Screen.SetResolution(mcW, mcH, FullScreenMode.Windowed);
@@ -589,7 +599,7 @@ namespace UltraBridge
                 {
                     // MELEE <mob id> <ULTRAKILL damage>
                     var a = rest.Split(' ');
-                    if (levelPrepared) MeleeHit(int.Parse(a[0]), Mathf.Max(1, Mathf.RoundToInt(F(a[1]))));
+                    if (levelPrepared) MeleeHit(int.Parse(a[0]), Mathf.RoundToInt(F(a[1])));
                     break;
                 }
                 case "SECX":
@@ -780,10 +790,10 @@ namespace UltraBridge
                 case "HEAL":
                 {
                     // HEAL <Minecraft health>: Minecraft healed the player (a full stomach's regeneration, potions,
-                    // golden apples, beacons): V1 heals the same, 5 HP per half heart (hard damage still caps it)
+                    // golden apples, beacons): V1 heals the same share of his maximum (hard damage still caps it)
                     var hnm = levelPrepared ? MonoSingleton<NewMovement>.Instance : null;
                     if (hnm == null || hnm.dead) break;
-                    healCarry += F(rest) * 5f;
+                    healCarry += F(rest) * (UkMax / (float)Mathf.Max(1, McMax));
                     int n = Mathf.FloorToInt(healCarry);
                     if (n >= 1)
                     {
@@ -873,7 +883,7 @@ namespace UltraBridge
                     var a = rest.Split(' ');
                     if (nm == null || nm.dead) break;
                     if (a.Length > 1 && a[1] == "void") nm.GetHurt(nm.hp * 10 + 999, false, 0f, ignoreInvincibility: true);
-                    else nm.GetHurt(Mathf.Max(1, Mathf.RoundToInt(F(a[0]))), true);
+                    else nm.GetHurt(Mathf.RoundToInt(F(a[0])), true);
                     break;
                 }
                 case "FULLHEAL":
@@ -2237,11 +2247,14 @@ namespace UltraBridge
                 if (p.pendingHurt == 0)
                 {
                     p.parryUntil = Time.time + ParryWindow;
+                    // a swing Minecraft stopped dead (a raised shield, armour that soaked it all) still flashes and
+                    // can still be parried, but nothing is waiting to land behind the window
+                    p.swingBlocked = damage <= 0;
                     var drm = MonoSingleton<DefaultReferenceManager>.Instance;
                     if (drm != null && drm.parryableFlash != null && p.head != null)
                         Instantiate(drm.parryableFlash, p.head.transform.position, Quaternion.identity);
                 }
-                p.pendingHurt += damage;
+                if (damage > 0) p.pendingHurt += damage;
             }
             else
             {
@@ -2253,7 +2266,14 @@ namespace UltraBridge
         {
             foreach (var p in proxies.Values)
             {
-                if (p == null || p.pendingHurt <= 0 || Time.time < p.parryUntil) continue;
+                if (p == null) continue;
+                // a swing Minecraft stopped dead has no hit waiting behind its window: the window just closes
+                if (p.swingBlocked && Time.time >= p.parryUntil)
+                {
+                    p.swingBlocked = false;
+                    p.hasPendingKnock = false;
+                }
+                if (p.pendingHurt <= 0 || Time.time < p.parryUntil) continue;
                 int d = p.pendingHurt;
                 p.pendingHurt = 0;
                 // The flash is the warning that this swing can be parried; whether it lands is still up to where V1
@@ -3811,13 +3831,14 @@ namespace UltraBridge
             if (__instance.hitter == "hook" && dmg > 0f) dmg = Mathf.Max(dmg, 0.5f);
             if (head) dmg *= critMultiplier > 0f ? 1f + critMultiplier : 2f;
             bool parry = false;
-            if (__instance.hitter == "punch" && p.pendingHurt > 0 && Time.time < p.parryUntil)
+            if (__instance.hitter == "punch" && (p.pendingHurt > 0 || p.swingBlocked) && Time.time < p.parryUntil)
             {
                 // punched while its hit was landing: a parry, exactly as a Filth takes one (5 damage, and the real
                 // parry with hitstop, flash, heal and style); the mob's hit never lands
                 p.pendingHurt = 0;
                 p.parryUntil = 0f;
                 p.hasPendingKnock = false;
+                p.swingBlocked = false;
                 dmg = 5f;
                 parry = true;
                 try { MonoSingleton<FistControl>.Instance.currentPunch.Parry(false, __instance); }

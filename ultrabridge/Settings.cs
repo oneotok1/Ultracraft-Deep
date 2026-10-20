@@ -216,7 +216,10 @@ namespace UltraBridge
                     string path = null;
                     if (kv.Value != "-" && int.TryParse(kv.Value, out var code))
                     {
-                        if (code < 0) path = "<Mouse>/" + (code == -1 ? "leftButton" : code == -2 ? "rightButton" : "middleButton");
+                        // GLFW's side buttons are X1 (back) and X2 (forward), numbered 3 and 4; Minecraft stores a button as
+                        // -1 - its GLFW number
+                        if (code < 0) path = "<Mouse>/" + (code == -1 ? "leftButton" : code == -2 ? "rightButton" : code == -3 ? "middleButton" :
+                            code == -4 ? "backButton" : code == -5 ? "forwardButton" : "middleButton");
                         else
                         {
                             var key = GlfwKey(code);

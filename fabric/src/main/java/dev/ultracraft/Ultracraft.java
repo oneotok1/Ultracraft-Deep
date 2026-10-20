@@ -375,7 +375,10 @@ public final class Ultracraft implements ClientModInitializer {
 		boolean mcHands = hands && !ui;
 		int buttons = 0;
 		if (ingame) {
-			for (int b = 0; b < 5; b++) if (GLFW.glfwGetMouseButton(handle, b) == GLFW.GLFW_PRESS) buttons |= 1 << b;
+			// GLFW numbers its buttons left, right, middle, X1 (back), X2 (forward); Unity's MouseState bits are left,
+			// right, middle, forward, back. The two side buttons are swapped between the two, so bit 3 and bit 4 cross over.
+			for (int b = 0; b < 5; b++)
+				if (GLFW.glfwGetMouseButton(handle, b) == GLFW.GLFW_PRESS) buttons |= 1 << (b == 3 ? 4 : b == 4 ? 3 : b);
 			if (mcHands && !shopTouch) buttons &= ~0b111;
 		}
 		sb.append(buttons);
@@ -821,7 +824,7 @@ public final class Ultracraft implements ClientModInitializer {
 
 	/** ULTRAKILL's messages that act on the world, handled by the server (ServerOps). */
 	private static final java.util.regex.Pattern SERVER_OPS = java.util.regex.Pattern.compile(
-		"^(V1STATE|FX|SLAM|RAIL|BOOM|HIT|FIRE|DMG|WHIP|MKNOCK|PIMPACT|PHOLD|PRELEASE|PARRY|PEARN|PADD|GEARADD|UPBUY|BOSSPOS|BOSSDEAD|BOSSGONE|GRIND|SPAWNS|UKDEAD|GRINDGONE|UKDIE|PHIT|SHURT|EQUIP|NOSPAWN|STYLE|UKSTYLE|UKMULTI) ");
+		"^(V1STATE|FX|SLAM|RAIL|BOOM|HIT|FIRE|DMG|WHIP|MKNOCK|PIMPACT|PHOLD|PRELEASE|PARRY|PEARN|PADD|GEARADD|UPBUY|UPSET|BOSSPOS|BOSSDEAD|BOSSGONE|GRIND|SPAWNS|UKDEAD|GRINDGONE|UKDIE|PHIT|SHURT|EQUIP|NOSPAWN|STYLE|UKSTYLE|UKMULTI) ");
 
 	/** A line from the server for our Minecraft side ("C:..." in UcNet), on the client thread. */
 	static void fromServer(String msg) {

@@ -2,6 +2,7 @@ package dev.ultracraft.mixin;
 
 import dev.ultracraft.UcNet;
 import dev.ultracraft.Ultracraft;
+import dev.ultracraft.V1Damage;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
@@ -22,6 +23,12 @@ public abstract class ServerPlayerMixin {
 	private void ultracraft$hurtV1(ServerLevel level, DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
 		ServerPlayer self = (ServerPlayer) (Object) this;
 		if (!UcNet.isV1(self)) return;
+		// a swing Minecraft is about to resolve over: armour, absorption hearts or a raised shield can eat the whole
+		// thing, and the tail below reports it to ULTRAKILL as the flash-with-no-damage it still was
+		V1Damage.arm(self, source);
+		// a raised shield stops a mob's swing outright, so nothing reaches V1Damage.take: the swing still gets
+		// ULTRAKILL's parry flash, with no damage behind it
+		if (self.isBlocking()) V1Damage.blocked(self, source);
 		if (source.is(DamageTypes.FELL_OUT_OF_WORLD)) {
 			// below the world: V1 dies in ULTRAKILL (like falling into a pit there), and Minecraft follows
 			UcNet.send(self, "HURT 9999 void");
@@ -31,5 +38,14 @@ public abstract class ServerPlayerMixin {
 			// a shop (whose terminal is a little smaller than its blocks) mustn't suffocate it, nor a fast dash into a wall
 			cir.setReturnValue(false);
 		}
+	}
+
+	/**
+	 * The swing is resolved. Nothing reached {@link V1Damage#take} if Minecraft's own hearts swallowed all of it, and
+	 * that branch never calls setHealth, so the damage hook stays silent: report the swing here instead.
+	 */
+	@Inject(method = "hurtServer", at = @At("TAIL"))
+	private void ultracraft$swingSettled(ServerLevel level, DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
+		V1Damage.settle((ServerPlayer) (Object) this, source);
 	}
 }

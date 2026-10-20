@@ -110,7 +110,7 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 			case 0 -> "Left Click";
 			case 1 -> "Right Click";
 			case 2 -> "Middle Click";
-			default -> "Mouse " + (-code);
+			default -> (-1 - code) == 3 ? "Mouse 4 (back)" : (-1 - code) == 4 ? "Mouse 5 (forward)" : "Mouse " + (-code);
 		});
 		return InputConstants.Type.KEYSYM.getOrCreate(code).getDisplayName();
 	}
@@ -177,7 +177,7 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 
 	@Override
 	public boolean mouseClicked(MouseButtonEvent e, boolean doubleClick) {
-		if (waiting >= 0 && e.button() <= 2) {
+		if (waiting >= 0 && e.button() <= 4) {
 			set(-1 - e.button());
 			return true;
 		}

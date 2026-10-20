@@ -29,6 +29,7 @@ final class UkProgress extends SavedData {
 		Codec.LONG.optionalFieldOf("nextBoss", 0L).forGetter(p -> p.nextBoss),
 		Codec.LONG.optionalFieldOf("earned", 0L).forGetter(p -> p.earned),
 		Codec.unboundedMap(Codec.STRING, Codec.INT).optionalFieldOf("upgrades", Map.of()).forGetter(p -> p.upgrades),
+		Codec.unboundedMap(Codec.STRING, Codec.INT).optionalFieldOf("bought", Map.of()).forGetter(p -> p.bought),
 		Codec.unboundedMap(Codec.STRING, Codec.INT).optionalFieldOf("equips", Map.of()).forGetter(p -> p.equips)
 	).apply(i, UkProgress::new));
 	static final SavedDataType<UkProgress> TYPE = type("ultracraft_progress");
@@ -54,16 +55,20 @@ final class UkProgress extends SavedData {
 	long bossClock, nextBoss;
 	/** All the P ever earned here. */
 	long earned;
-	/** Each upgrade's level (UkUpgrades' keys, "rev.power"...; missing is 1). */
+	/** Each upgrade's level (UkUpgrades' keys, "rev.power"...; missing is 1). A lowered level rests here. */
 	final Map<String, Integer> upgrades = new HashMap<>();
+	/** The highest level paid for, per upgrade: it only ever grows, and a level lowered below it costs nothing to
+	 * put back. Older saves have none, so it falls back to the level itself. */
+	final Map<String, Integer> bought = new HashMap<>();
 	/** Which weapons are equipped: weapon.rev0 = 0 off, 1 on, 2 the alternate (missing is on). */
 	final Map<String, Integer> equips = new HashMap<>();
 
 	UkProgress() {}
 
 	private UkProgress(int money, List<String> gear, Map<String, Integer> beaten, long bossClock, long nextBoss, long earned, Map<String, Integer> upgrades,
-		Map<String, Integer> equips) {
+		Map<String, Integer> bought, Map<String, Integer> equips) {
 		this.upgrades.putAll(upgrades);
+		this.bought.putAll(bought);
 		this.equips.putAll(equips);
 		UkUpgrades.migrate(this.upgrades);
 		this.money = money;
@@ -137,10 +142,18 @@ final class UkProgress extends SavedData {
 		changed();
 	}
 
+	/** What an upgrade is set to now. Lowering it does nothing until it is raised again; nothing is refunded. */
 	int level(String key) {
 		UkUpgrades.Track t = UkUpgrades.TRACKS.get(key);
 		int max = t != null ? t.max() : 1;
 		return Math.max(1, Math.min(max, upgrades.getOrDefault(key, 1)));
+	}
+
+	/** The highest level paid for: the level can rest below it and come back up for nothing, but never above it. */
+	int bought(String key) {
+		UkUpgrades.Track t = UkUpgrades.TRACKS.get(key);
+		int max = t != null ? t.max() : 1;
+		return Math.max(level(key), Math.min(max, bought.getOrDefault(key, level(key))));
 	}
 
 	void setLevel(String key, int level) {
@@ -150,24 +163,40 @@ final class UkProgress extends SavedData {
 		setDirty();
 	}
 
+	/** The reset command: nothing has been paid for any more. */
+	void forgetBought() {
+		bought.clear();
+		setDirty();
+	}
+
+	/** Buying (or a command) raises what was paid for, and with it the level. */
+	void setBought(String key, int level) {
+		UkUpgrades.Track t = UkUpgrades.TRACKS.get(key);
+		if (t == null) return;
+		int lv = Math.max(1, Math.min(t.max(), level));
+		bought.put(key, Math.max(bought(key), lv));
+		setLevel(key, lv);
+	}
+
 	/** UPBUY key from the shop's Upgrades page: the next level, if there's one and V1 can pay. */
 	boolean buyUpgrade(String key, boolean free) {
 		UkUpgrades.Track t = UkUpgrades.TRACKS.get(key);
 		if (t == null) return false;
-		int lv = level(key);
+		int lv = bought(key);
 		int cost = free ? 0 : t.costTo(lv + 1);
 		if (lv >= t.max() || money < cost) return false;
 		add(-cost);
-		setLevel(key, lv + 1);
+		setBought(key, lv + 1);
 		return true;
 	}
 
-	/** UPGRADES key=level/max/next cost,...: every upgrade's level, how far it goes and what the next level costs. */
+	/** UPGRADES key=level/max/next cost/bought,...: every upgrade's level, how far it goes, what the next level costs
+	 * and the highest level paid for (the level buttons stop there). */
 	void sendUpgrades() {
 		StringBuilder sb = new StringBuilder("UPGRADES ");
 		for (UkUpgrades.Track t : UkUpgrades.TRACKS.values()) {
 			int lv = level(t.key());
-			sb.append(t.key()).append('=').append(lv).append('/').append(t.max()).append('/').append(t.costTo(lv + 1)).append(',');
+			sb.append(t.key()).append('=').append(lv).append('/').append(t.max()).append('/').append(t.costTo(bought(t.key()) + 1)).append('/').append(bought(t.key())).append(',');
 		}
 		sendOwner(sb.substring(0, sb.length() - 1));
 	}

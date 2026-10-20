@@ -46,6 +46,8 @@ public abstract class LivingEntityMixin {
 	private void ultracraft$knockV1(double strength, double x, double z, CallbackInfo ci) {
 		if (!((Object) this instanceof ServerPlayer sp) || !UcNet.isV1(sp)) return;
 		ci.cancel();
+		// a raised shield that stopped the swing stops its shove too: holding the line is the whole point of it
+		if (V1Damage.meleeBlockedThisTick(sp)) return;
 		double d = strength * (1.0 - sp.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE));
 		if (d <= 0.0) return;
 		while (x * x + z * z < 1.0E-5) {
