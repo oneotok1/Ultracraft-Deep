@@ -22,6 +22,8 @@ Commands: `/uc help`. On someone else's world, the ones that hand things out (P,
 
 Minecraft crashes at launch with "Unsupported class file major version 65"? Your Fabric Loader is too old for Minecraft 1.21.11: run the latest Fabric installer (https://fabricmc.net/use/installer/), install the newest loader (0.19 or later) for 1.21.11, and start that profile.
 
+What changed in each version: [changelog](CHANGELOG.md), and every version has its own notes on the [Releases](https://github.com/oneotok1/Ultracraft-Deep/releases) page.
+
 ## Settings
 
 **Ultracraft...** (title screen, pause menu, Options, or `/uc settings`) has a page for each of these:

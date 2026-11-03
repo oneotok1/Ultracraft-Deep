@@ -24,6 +24,8 @@
 
 Minecraft 启动时崩溃并提示 “Unsupported class file major version 65”？说明 Fabric Loader 版本与 Minecraft 1.21.11 不匹配：请运行最新版 [Fabric 安装器](https://fabricmc.net/use/installer/)，选择 1.21.11 的最新 loader（0.19 或更高版本），并启动对应配置。
 
+各版本改了什么：[更新日志](CHANGELOG-zh.md)（每个版本也都在 [Releases](https://github.com/oneotok1/Ultracraft-Deep/releases) 有对应说明）。
+
 ## 设置
 
 点击 **Ultracraft...**（位于标题界面、暂停菜单、选项界面，或输入指令 `/uc settings`），各专项设置页面如下：
