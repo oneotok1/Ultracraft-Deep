@@ -12,9 +12,9 @@
 
 启动该游戏实例。ULTRAKILL 将自动同步启动（并随 Minecraft 一并退出），并跳过两段开场直接进入主菜单、随即切入沙盒；进入任意世界即可化身 V1（随时按 F8 切回原版史蒂夫）。
 
-**手动安装：** 安装对应 Minecraft **1.21.11** 的 **Fabric Loader**（https://fabricmc.net/use/installer/），并将对应 1.21.11 的 **Fabric API**（https://modrinth.com/mod/fabric-api）与 `ultracraft-x.y.z.jar`（取自 Releases 发布包中的 `Ultracraft.zip`）放入 `.minecraft/mods` 文件夹。
+**手动安装：** 安装对应 Minecraft **1.21.11** 的 **Fabric Loader**（[安装器](https://fabricmc.net/use/installer/)），并将对应 1.21.11 的 **Fabric API**（[Modrinth](https://modrinth.com/mod/fabric-api)）与 `ultracraft-x.y.z.jar`（取自 Releases 发布包中的 `Ultracraft.zip`）放入 `.minecraft/mods` 文件夹。
 
-未找到 ULTRAKILL（安装在非标准路径）？在 `config/ultracraft.properties` 中指定游戏路径：`ultrakillDir=D:\\Games\\ULTRAKILL`（注意使用双反斜杠）。若已安装 BepInEx 6：Ultracraft 需要的是 BepInEx 5。若仍有问题：请手动将 BepInEx 5（x64，https://github.com/BepInEx/BepInEx/releases）解压至 ULTRAKILL 根目录，并将 `Ultracraft.zip` 中的 `UltraBridge.dll` 放入 `ULTRAKILL/BepInEx/plugins/UltraBridge/`。
+未找到 ULTRAKILL（安装在非标准路径）？在 `config/ultracraft.properties` 中指定游戏路径：`ultrakillDir=D:\\Games\\ULTRAKILL`（注意使用双反斜杠）。若已安装 BepInEx 6：Ultracraft 需要的是 BepInEx 5。若仍有问题：请手动将 [BepInEx 5](https://github.com/BepInEx/BepInEx/releases)（x64）解压至 ULTRAKILL 根目录，并将 `Ultracraft.zip` 中的 `UltraBridge.dll` 放入 `ULTRAKILL/BepInEx/plugins/UltraBridge/`。
 
 终端机的中文需要额外一个字体包（ULTRAKILL 自带字体没有汉字）：把 `fontpack.bundle` 放到 `ULTRAKILL/BepInEx/plugins/UltraBridge/` 即可。没有它时终端机保持英文，其余汉化不受影响。
 
@@ -22,7 +22,7 @@
 
 卡在 “ULTRAKILL connected - loading V1...”？请更新至最新版本：旧版本在未完成新手教程的 ULTRAKILL 存档上会无限期等待。新版本会在提示信息中明确列出当前正在等待加载的关卡。
 
-Minecraft 启动时崩溃并提示 “Unsupported class file major version 65”？说明 Fabric Loader 版本与 Minecraft 1.21.11 不匹配：请运行最新版 Fabric 安装器（https://fabricmc.net/use/installer/），选择 1.21.11 的最新 loader（0.19 或更高版本），并启动对应配置。
+Minecraft 启动时崩溃并提示 “Unsupported class file major version 65”？说明 Fabric Loader 版本与 Minecraft 1.21.11 不匹配：请运行最新版 [Fabric 安装器](https://fabricmc.net/use/installer/)，选择 1.21.11 的最新 loader（0.19 或更高版本），并启动对应配置。
 
 ## 设置
 
