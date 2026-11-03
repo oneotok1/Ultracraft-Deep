@@ -44,7 +44,7 @@ public final class MobDamageScreen extends Screen {
     private int scroll;
 
     public MobDamageScreen(Screen last) {
-        super(Component.literal("Mob Damage Filter"));
+        super(Component.translatable("Mob Damage Filter"));
         this.last = last;
         for (EntityType<?> type : all) counts[MobDamageRules.category(type)]++;
         filter();
@@ -64,7 +64,7 @@ public final class MobDamageScreen extends Screen {
         int x = 20;
         int y = 14;
         int searchW = 148;
-        search = new EditBox(font, width - 20 - searchW, y, searchW, 20, Component.literal("Search"));
+        search = new EditBox(font, width - 20 - searchW, y, searchW, 20, Component.translatable("Search"));
         search.setMaxLength(50);
         search.setValue(query);
         search.setResponder(s -> {
@@ -81,15 +81,14 @@ public final class MobDamageScreen extends Screen {
         String[] names = {"Hostile", "Neutral", "Passive", "Other"};
         for (int i = 0; i < 4; i++) {
             final int which = i;
-            Button b = Button.builder(Component.literal(names[i] + "  " + counts[i]), btn -> {
+            Button b = Button.builder(Component.translatable(names[i]).copy().append("  " + counts[i]), btn -> {
                 chip = chip == which ? -1 : which;
                 scroll = 0;
                 filter();
                 rebuildLater();
-            }).bounds(x, 46, 92, 20).tooltip(Tooltip.create(Component.literal(
-                    "Show only " + names[i].toLowerCase(Locale.ROOT) + " mobs (press again for all of them)."))).build();
+            }).bounds(x, 46, 92, 20).tooltip(Tooltip.create(Component.translatable("Filter by %s mobs (click again to show all categories).", Component.translatable(names[i]).getString()))).build();
             // the group showing: its heading lit, the others plain
-            b.setMessage(Component.literal(names[i] + "  " + counts[i])
+            b.setMessage(Component.translatable(names[i]).copy().append("  " + counts[i])
                     .withStyle(chip == which ? ChatFormatting.YELLOW : ChatFormatting.WHITE));
             addRenderableWidget(b);
             x += 98;
@@ -108,23 +107,23 @@ public final class MobDamageScreen extends Screen {
         }
 
         int by = height - 40;
-        addRenderableWidget(Button.builder(Component.literal("Select Shown"), b -> {
+        addRenderableWidget(Button.builder(Component.translatable("Select Shown"), b -> {
             for (EntityType<?> type : shown) UltracraftConfig.dmgMobs.put(MobDamageRules.key(type), Boolean.TRUE);
             rebuildLater();
-        }).bounds(20, by, 110, 20).tooltip(Tooltip.create(Component.literal("Let ULTRAKILL touch every mob showing."))).build());
-        addRenderableWidget(Button.builder(Component.literal("Invert Shown"), b -> {
+        }).bounds(20, by, 110, 20).tooltip(Tooltip.create(Component.translatable("Allow ULTRAKILL interactions for all currently visible mobs."))).build());
+        addRenderableWidget(Button.builder(Component.translatable("Invert Shown"), b -> {
             for (EntityType<?> type : shown) UltracraftConfig.dmgMobs.put(MobDamageRules.key(type), !MobDamageRules.allowed(type));
             rebuildLater();
-        }).bounds(136, by, 110, 20).tooltip(Tooltip.create(Component.literal("Turn every mob showing the other way."))).build());
-        addRenderableWidget(Button.builder(Component.literal("Defaults"), b -> {
+        }).bounds(136, by, 110, 20).tooltip(Tooltip.create(Component.translatable("Invert the filter state for all currently visible mobs."))).build());
+        addRenderableWidget(Button.builder(Component.translatable("Defaults"), b -> {
             UltracraftConfig.dmgMobs.clear();
             UltracraftConfig.dmgHostile = true;
             UltracraftConfig.dmgNeutral = true;
             UltracraftConfig.dmgPassive = true;
             UltracraftConfig.dmgOther = true;
             rebuildLater();
-        }).bounds(252, by, 110, 20).tooltip(Tooltip.create(Component.literal("Every mob of every group, and every mob's own setting forgotten."))).build());
-        addRenderableWidget(Button.builder(Component.literal("Done"), b -> onClose()).bounds(width - 20 - 110, by, 110, 20).build());
+        }).bounds(252, by, 110, 20).tooltip(Tooltip.create(Component.translatable("Reset all categories to allowed and clear per-mob overrides."))).build());
+        addRenderableWidget(Button.builder(Component.translatable("Done"), b -> onClose()).bounds(width - 20 - 110, by, 110, 20).build());
     }
 
     private Button mobButton(EntityType<?> type, int x, int y) {
@@ -140,8 +139,12 @@ public final class MobDamageScreen extends Screen {
             case MobDamageRules.PASSIVE -> "Passive";
             default -> "Other";
         };
-        Component tip = Component.literal(where + (modded(type) ? " (another mod's)" : "") + "\n" + group + " mob. " + (allowed
-                ? "ULTRAKILL's side may touch it." : "ULTRAKILL's side ignores it completely: no weapon, fist, enemy, Whiplash or blast."));
+        Component tip = Component.literal(where + (modded(type) ? Component.translatable(" (modded)").getString() : "") + "\n")
+                .append(Component.translatable(group + " mob."))
+                .append(" ")
+                .append(Component.translatable(allowed
+                        ? "Allowed: affected by ULTRAKILL weapons, attacks, Whiplash, and blasts."
+                        : "Ignored: completely immune to all ULTRAKILL weapons, enemies, Whiplash, and explosions."));
         return Button.builder(label, b -> {
             UltracraftConfig.dmgMobs.put(MobDamageRules.key(type), !allowed);
             rebuildLater();

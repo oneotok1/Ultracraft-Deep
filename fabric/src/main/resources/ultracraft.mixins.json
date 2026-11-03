@@ -9,6 +9,7 @@
     "ClientLevelMixin",
     "ClientPacketListenerMixin",
     "GameRendererMixin",
+    "InGameHudMixin",
     "InventoryScreenMixin",
     "ItemInHandRendererMixin",
     "LocalPlayerMixin",

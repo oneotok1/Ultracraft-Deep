@@ -15,7 +15,7 @@ import net.minecraft.network.chat.Component;
 /** Cheats -> Boss Setup: every boss, each with its own page (BossSetup has what each option does). */
 final class UcBossSetupScreen extends OptionsSubScreen {
 	UcBossSetupScreen(Screen last) {
-		super(last, Minecraft.getInstance().options, Component.literal("Boss Setup"));
+		super(last, Minecraft.getInstance().options, Component.translatable("Boss Setup"));
 	}
 
 	/** "In rotation, x1.5 health, practice" for its button. */
@@ -37,8 +37,8 @@ final class UcBossSetupScreen extends OptionsSubScreen {
 		List<AbstractWidget> row = new ArrayList<>();
 		for (UkBosses.Boss b : UkBosses.ROSTER) {
 			String s = summary(b.key());
-			Button btn = Button.builder(Component.literal(b.name() + (s.isEmpty() ? "" : " *")), x -> minecraft.setScreen(new Page(this, b)))
-				.tooltip(Tooltip.create(Component.literal(s.isEmpty() ? "As ULTRAKILL has it." : s.substring(2, s.length() - 1)))).build();
+			Button btn = Button.builder(Component.translatable("boss.ultracraft." + b.key()).append(s.isEmpty() ? Component.empty() : Component.literal(" *")), x -> minecraft.setScreen(new Page(this, b)))
+				.tooltip(Tooltip.create(Component.translatable(s.isEmpty() ? "As ULTRAKILL has it." : s.substring(2, s.length() - 1)))).build();
 			row.add(btn);
 		}
 		for (int i = 0; i < row.size(); i += 2) list.addSmall(row.get(i), i + 1 < row.size() ? row.get(i + 1) : null);
@@ -49,13 +49,13 @@ final class UcBossSetupScreen extends OptionsSubScreen {
 		private final UkBosses.Boss boss;
 
 		Page(Screen last, UkBosses.Boss boss) {
-			super(last, Minecraft.getInstance().options, Component.literal(boss.name()));
+			super(last, Minecraft.getInstance().options, Component.translatable("boss.ultracraft." + boss.key()));
 			this.boss = boss;
 		}
 
 		private OptionInstance<Boolean> bool(String caption, String tooltip, String opt) {
 			String k = boss.key();
-			return OptionInstance.createBoolean(caption, OptionInstance.cachedConstantTooltip(Component.literal(tooltip)), BossSetup.flag(k, opt),
+			return OptionInstance.createBoolean(caption, OptionInstance.cachedConstantTooltip(Component.translatable(tooltip)), BossSetup.flag(k, opt),
 				v -> BossSetup.flag(k, opt, v));
 		}
 
@@ -69,15 +69,15 @@ final class UcBossSetupScreen extends OptionsSubScreen {
 		protected void addOptions() {
 			String k = boss.key();
 			// ---- whether and which
-			list.addHeader(Component.literal("When it comes"));
+			list.addHeader(Component.translatable("When it comes"));
 			OptionInstance<Boolean> rotation = OptionInstance.createBoolean("In Rotation",
-				OptionInstance.cachedConstantTooltip(Component.literal("It comes on its own, now and then. Off: only when you call it (Fight Now, /uc boss call).")),
+				OptionInstance.cachedConstantTooltip(Component.translatable("It comes on its own, now and then. Off: only when you call it (Fight Now, /uc boss call).")),
 				BossSetup.inRotation(k), v -> BossSetup.flag(k, "notInRotation", !v));
 			OptionInstance<Boolean> practice = bool("Practice",
 				"Beating it pays nothing and doesn't count as beaten (no P, loot or experience; your boss count and difficulty stay as they are).", "practice");
 			list.addSmall(rotation, practice);
 			// ---- how it fights
-			list.addHeader(Component.literal("How it fights"));
+			list.addHeader(Component.translatable("How it fights"));
 			list.addSmall(times("Health", "How much damage it takes to beat (ULTRAKILL's own health modifier).", "health", 3, 40),
 				times("Speed", "How fast it moves and attacks (ULTRAKILL's own speed modifier).", "speed", 5, 20));
 			OptionInstance<?> phase = BossSetup.hasPhases(k) ? bool("Second Phase From the Start",
@@ -96,11 +96,11 @@ final class UcBossSetupScreen extends OptionsSubScreen {
 				}
 			}
 			if (!own.isEmpty()) {
-				list.addHeader(Component.literal("As in its level"));
+				list.addHeader(Component.translatable("As in its level"));
 				list.addSmall(own.toArray(new OptionInstance<?>[0]));
 			}
 			// ---- traits
-			list.addHeader(Component.literal("Traits"));
+			list.addHeader(Component.translatable("Traits"));
 			String[] modes = {"random", "none", "pick"};
 			String[] modeNames = {"Random", "None", "Picked"};
 			int mode = java.util.Arrays.asList(modes).indexOf(BossSetup.traits(k));
@@ -119,12 +119,12 @@ final class UcBossSetupScreen extends OptionsSubScreen {
 			}
 			// ---- its music and entrance, and a fight now
 			list.addHeader(Component.literal(""));
-			Button music = Button.builder(Component.literal("Music & Entrance..."), b -> minecraft.setScreen(new UcBossMusicScreen.Pick(this, boss)))
-				.tooltip(Tooltip.create(Component.literal("Its song, and which entrance it makes."))).build();
-			Button now = Button.builder(Component.literal("Fight Now"), b -> {
+			Button music = Button.builder(Component.translatable("Music & Entrance..."), b -> minecraft.setScreen(new UcBossMusicScreen.Pick(this, boss)))
+				.tooltip(Tooltip.create(Component.translatable("Its song, and which entrance it makes."))).build();
+			Button now = Button.builder(Component.translatable("Fight Now"), b -> {
 				minecraft.setScreen(null);
 				if (minecraft.player != null) minecraft.player.connection.sendCommand("uc boss call " + k + " 3");
-			}).tooltip(Tooltip.create(Component.literal("It comes for you in 3 seconds, set up as on this page (as V1, with no other boss around)."))).build();
+			}).tooltip(Tooltip.create(Component.translatable("It comes for you in 3 seconds, set up as on this page (as V1, with no other boss around)."))).build();
 			list.addSmall(music, now);
 		}
 	}

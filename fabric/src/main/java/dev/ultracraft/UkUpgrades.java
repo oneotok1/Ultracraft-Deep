@@ -53,8 +53,8 @@ final class UkUpgrades {
 		group("rock", "Rocket Launcher", "Payload", "payload", "Autoloader", "rate");
 		group("arm0", "Feedbacker", "Reflex", "reflex", "Return to Sender", "sender", "Bloodfist", "bloodfist", "Arc", "arc",
 			"Counterblast", "counter", "Adrenaline", "adrenaline");
-		group("arm1", "Knuckleblaster", "Shockwave", "shockwave", "Demolition", "demolition", "Detonator", "detonator", "Seismic", "seismic",
-			"Ironclad", "ironclad", "Overcharge", "overcharge");
+		group("arm1", "Knuckleblaster", "Shockwave", "shockwave", "Demolition", "demolition", "Detonator", "detonator",
+			"Ironclad", "ironclad", "Overcharge", "overcharge", "Seismic", "seismic");
 		group("arm2", "Whiplash", "Reel", "reel", "Barbs", "barbs", "Grapple", "grapple", "Live Wire", "livewire",
 			"Slingshot", "slingshot", "Ripcord", "ripcord");
 	}

@@ -1,4 +1,4 @@
-// UltraBridge, part five: what the shop's upgrades do (Minecraft keeps the levels and sells them: UPGRADES, UPBUY).
+﻿// UltraBridge, part five: what the shop's upgrades do (Minecraft keeps the levels and sells them: UPGRADES, UPBUY).
 //
 // Every weapon and each arm has its own Power (40% at first, so a zombie takes two headshots; 300% fully upgraded, 1500% with the OP Shop: damage to
 // enemies, Minecraft's mobs and blocks) and upgrades of its own (blast sizes go to 1500% with the OP Shop too):
@@ -49,8 +49,8 @@ namespace UltraBridge
             new[] { "rock", "Rocket Launcher", "payload", "Payload", "rate", "Autoloader" },
             new[] { "arm0", "Feedbacker", "reflex", "Reflex", "sender", "Return to Sender", "bloodfist", "Bloodfist", "arc", "Arc",
                 "counter", "Counterblast", "adrenaline", "Adrenaline" },
-            new[] { "arm1", "Knuckleblaster", "shockwave", "Shockwave", "demolition", "Demolition", "detonator", "Detonator", "seismic", "Seismic",
-                "ironclad", "Ironclad", "overcharge", "Overcharge" },
+            new[] { "arm1", "Knuckleblaster", "shockwave", "Shockwave", "demolition", "Demolition", "detonator", "Detonator",
+                "ironclad", "Ironclad", "overcharge", "Overcharge", "seismic", "Seismic" },
             new[] { "arm2", "Whiplash", "reel", "Reel", "barbs", "Barbs", "grapple", "Grapple", "livewire", "Live Wire",
                 "slingshot", "Slingshot", "ripcord", "Ripcord" },
         };
@@ -143,6 +143,7 @@ namespace UltraBridge
         /// <summary>What one level of an upgrade does, in a few words ("120%", "x1.5 as fast").</summary>
         public static string UpEffect(string key, int level)
         {
+            if (Zh) return UpEffectZh(key, level);
             string track = key.Substring(key.IndexOf('.') + 1);
             switch (track)
             {
@@ -175,6 +176,7 @@ namespace UltraBridge
         /// <summary>What an upgrade is for.</summary>
         public static string UpAbout(string key)
         {
+            if (Zh) return UpAboutZh(key);
             switch (key)
             {
                 case "rev.power": case "sho.power": case "nai.power": case "rai.power": case "rock.power":

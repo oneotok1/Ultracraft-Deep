@@ -138,6 +138,13 @@ namespace UltraBridge
                     HandleSky("-");
                     if (levelPrepared) RefreshLoadout();
                     UpgradeTexts();
+                    // and the position sync starts over with it. ULTRAKILL stays on its menu scene, where V1 still
+                    // stands wherever the world we just left put it, and keeps sending that pose: Minecraft follows
+                    // it into the next world, the server rejects the spot and pushes back. No origin, no pose and no
+                    // TP until the next world sends its own.
+                    originSet = false;
+                    tpReceived = false;
+                    v1Landed = false;
                     Plugin.Log.LogInfo("world left: progress reset until the next world's comes");
                     break;
                 }
@@ -452,6 +459,17 @@ namespace UltraBridge
 
         readonly List<UpgradePage> upgradePages = new List<UpgradePage>();
         GameObject upgradeSound;
+        /// <summary>The main menu's own Upgrades button. The upgrade page refreshes itself when Minecraft's
+        /// language changes, but that button sits outside the page, so it is refreshed from here too.</summary>
+        TMP_Text upgradesMenuLabel;
+
+        /// <summary>Puts the menu's Upgrades button in Minecraft's language, font and all.</summary>
+        void LocalizeMenuButton()
+        {
+            if (upgradesMenuLabel == null) return;
+            upgradesMenuLabel.text = UiText("Upgrades");
+            ApplyShopFont(upgradesMenuLabel.transform);
+        }
         static readonly string[] UpgradeButtons = { "RevolverButton", "ShotgunButton", "NailgunButton", "RailcannonButton", "RocketLauncherButton", "ArmButton" };
         // the arms get a button each: ArmButton and two copies of it
         static readonly string[] UpgradeListGroups = { "rev", "sho", "nai", "rai", "rock", "arm0", "arm1", "arm2" };
@@ -476,8 +494,8 @@ namespace UltraBridge
             int dot = key.IndexOf('.');
             var g = GroupOf(key.Substring(0, dot));
             string t = key.Substring(dot + 1);
-            if (t == "power") return "Power";
-            for (int i = 2; i + 1 < g.Length; i += 2) if (g[i] == t) return g[i + 1];
+            if (t == "power") return UpName("Power");
+            for (int i = 2; i + 1 < g.Length; i += 2) if (g[i] == t) return UpName(g[i + 1]);
             return t;
         }
 
@@ -524,7 +542,7 @@ namespace UltraBridge
             foreach (var d in drop) DestroyImmediate(d);
             var panel = page.transform.Find("Weapons Panel");
             if (panel == null) return;
-            SetText(panel.Find("Menu Title"), "Upgrades");
+            SetText(panel.Find("Menu Title"), UiText("Upgrades"));
             var up = new UpgradePage { page = page };
             var list = panel.Find("Buttons");
             // the Weapons list greys out the button last pressed (and ignores it until another is): here every button
@@ -744,7 +762,9 @@ namespace UltraBridge
             var ub = Instantiate(sandboxButton.gameObject, menuButtons, false);
             ub.name = "UpgradesButton";
             ub.transform.SetSiblingIndex(weaponsButton.GetSiblingIndex() + 1);
-            SetText(ub.transform.Find("Text"), "Upgrades");
+            SetText(ub.transform.Find("Text"), UiText("Upgrades"));
+            upgradesMenuLabel = ub.transform.Find("Text") != null ? ub.transform.Find("Text").GetComponent<TMP_Text>() : null;
+            LocalizeMenuButton();
             var hide = new List<GameObject> { menuGo };
             if (tip != null) hide.Add(tip);
             var usb = ub.GetComponent<ShopButton>();
@@ -846,12 +866,12 @@ namespace UltraBridge
                     var t = b.GetComponentInChildren<TMP_Text>(true);
                     if (t == null) continue;
                     bool chosen = up.group == kind;
-                    t.text = (chosen ? "<color=#FF4343>></color> " : "") + GroupOf(kind)[1] + "  <color=#FF4343>" + Mathf.RoundToInt(Power(kind) * 100f) + "%</color>";
+                    t.text = (chosen ? "<color=#FF4343>></color> " : "") + UpName(GroupOf(kind)[1]) + "  <color=#FF4343>" + Mathf.RoundToInt(Power(kind) * 100f) + "%</color>";
                     var bt = b.GetComponent<Button>();
                     if (bt != null) bt.interactable = true;
                 }
                 var g = GroupOf(up.group);
-                if (up.title != null) up.title.text = g[1].ToUpperInvariant();
+                if (up.title != null) up.title.text = UpName(g[1]).ToUpperInvariant();
                 var tracks = TracksOf(up.group);
                 up.track = Mathf.Clamp(up.track, 0, tracks.Length - 1);
                 var picked = tracks[up.track];
@@ -871,7 +891,7 @@ namespace UltraBridge
                     int plv = UpLevel(picked);
                     int pmax = UcUp.TryGetValue(picked, out var ptr) ? ptr.max : 1;
                     sb.Append('\n').Append(UpAbout(picked));
-                    if (plv < pmax) sb.Append("\n<color=#888888>Next: ").Append(UpEffect(picked, plv + 1)).Append("</color>");
+                    if (plv < pmax) sb.Append("\n<color=#888888>").Append(UiText("Next:")).Append(' ').Append(UpEffect(picked, plv + 1)).Append("</color>");
                     up.text.text = sb.ToString().TrimEnd();
                 }
                 if (up.money != null) up.money.UpdateMoney();
@@ -899,12 +919,14 @@ namespace UltraBridge
                     bool maxed = tr == null || tr.bought >= tr.max;
                     bool can = !maxed && Spendable >= tr.cost;
                     if (buy.text != null)
-                        buy.text.text = maxed ? TrackName(key) + ": Maxed"
-                            : can ? "Buy " + TrackName(key) + ": " + MoneyText.DivideMoney(tr.cost) + " <color=#FF4343>P</color>"
+                        buy.text.text = maxed ? TrackName(key) + ": " + UiText("Maxed")
+                            : can ? UiText("Buy") + " " + TrackName(key) + ": " + MoneyText.DivideMoney(tr.cost) + " <color=#FF4343>P</color>"
                             : "<color=red>" + TrackName(key) + ": " + MoneyText.DivideMoney(tr.cost) + " P</color>";
                     if (buy.image != null) buy.image.color = can || maxed ? Color.white : Color.red;
                     if (buy.sb != null) buy.sb.failure = !can;
                 }
+                // the Chinese text needs a font with the glyphs: ULTRAKILL's own has none
+                ApplyShopFont(up);
             }
         }
 
@@ -1028,9 +1050,12 @@ namespace UltraBridge
                 bool owned = Owns(gear), can = Owns(needs) && Spendable >= price;
                 // once bought it's a switch: standard or alternate
                 if (text != null)
-                    text.text = owned ? (AlternateOn(gear.Substring(0, gear.Length - 3)) ? "ALTERNATE\n<color=#FF4343>ON</color>" : "ALTERNATE\nOFF")
-                        : can ? "ALTERNATE\n" + MoneyText.DivideMoney(price) + " <color=#FF4343>P</color>"
-                        : "<color=red>ALTERNATE\n" + MoneyText.DivideMoney(price) + " P</color>";
+                    text.text = owned ? (AlternateOn(gear.Substring(0, gear.Length - 3))
+                            ? UiText("ALTERNATE") + "\n<color=#FF4343>" + UiText("ON") + "</color>"
+                            : UiText("ALTERNATE") + "\n" + UiText("OFF"))
+                        : can ? UiText("ALTERNATE") + "\n" + MoneyText.DivideMoney(price) + " <color=#FF4343>P</color>"
+                        : "<color=red>" + UiText("ALTERNATE") + "\n" + MoneyText.DivideMoney(price) + " P</color>";
+                if (text != null) ApplyShopFont(text.transform);
                 if (image != null) image.color = owned || can ? Color.white : Color.red;
                 if (sb != null) sb.failure = !can && !owned;
             }
@@ -1577,11 +1602,12 @@ namespace UltraBridge
             if (w.EndsWith("0")) return;
             if (Bridge.Owns(w.Substring(0, w.Length - 1) + "0")) return;
             const string text = "<color=red>Buy the weapon first</color>";
-            if (__instance.costText != null) __instance.costText.text = text;
+            var shown = Bridge.Zh ? "<color=red>请先购买该武器</color>" : text;
+            if (__instance.costText != null) __instance.costText.text = shown;
             var b = __instance.buyButton;
             if (b == null) return;
             var label = b.GetComponentInChildren<TMP_Text>();
-            if (label != null) label.text = text;
+            if (label != null) label.text = shown;
             b.failure = true;
             var button = b.GetComponent<Button>();
             if (button != null) button.interactable = false;

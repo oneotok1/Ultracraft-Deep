@@ -78,6 +78,9 @@ public final class Ultracraft implements ClientModInitializer {
 	public static volatile boolean shopNear;
 	/** Wheel notches waiting to go to ULTRAKILL. */
 	public static double wheel;
+	/** Xaero's minimap (or world map) is in: it draws after the whole HUD, so V1's overlay waits for it (InGameHudMixin). */
+	public static final boolean xaeroPresent = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("xaerominimap")
+		|| net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("xaeroworldmap");
 
 	/** Implemented on every Projectile by ProjectileMixin: apply a hit ULTRAKILL decided on. */
 	public interface HitApplier {
@@ -105,6 +108,23 @@ public final class Ultracraft implements ClientModInitializer {
 		return k == toggle || k == handsKey;
 	}
 
+	/** How the key that becomes V1 (or Steve) is bound now, e.g. "F8": prompts name the key the player set. */
+	public static String toggleKeyName() {
+		return keyName(toggle, "F8");
+	}
+
+	/** How the key that swaps V1's guns for Minecraft hands is bound now, e.g. "V". */
+	public static String handsKeyName() {
+		return keyName(handsKey, "V");
+	}
+
+	/** A key's bound name, or the default when it is unbound or there is no mapping yet (server side). */
+	private static String keyName(KeyMapping k, String fallback) {
+		if (k == null) return fallback;
+		String name = k.getTranslatedKeyMessage().getString();
+		return name == null || name.isBlank() ? fallback : name;
+	}
+
 	/**
 	 * Steve is playing after having been V1, with ULTRAKILL still running: its enemies stay, drawn from Steve's camera
 	 * (bridge SteveView.cs).
@@ -126,6 +146,8 @@ public final class Ultracraft implements ClientModInitializer {
 	private static String lastBlocks;
 	private static boolean playingSent;
 	private static long lastBlocksAt;
+	/** How old a pose may be before it counts as "ULTRAKILL is not sending anything right now" (a scene change). */
+	private static final long STALE_POSE_NS = 500_000_000L;
 
 	/** GLFW keys ULTRAKILL can use. */
 	private static final int[] KEYS;
@@ -156,8 +178,10 @@ public final class Ultracraft implements ClientModInitializer {
 		UltracraftConfig.load();
 		UkLink.start();
 		UcNet.registerClient();
-		toggle = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.ultracraft.toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F8, KeyMapping.Category.MISC));
-		handsKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.ultracraft.hands", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, KeyMapping.Category.MISC));
+		// our own controls get their own section in Minecraft's controls list instead of being mixed into "Miscellaneous"
+		KeyMapping.Category ourKeys = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("ultracraft", "keys"));
+		toggle = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.ultracraft.toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F8, ourKeys));
+		handsKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.ultracraft.hands", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, ourKeys));
 		ClientTickEvents.END_CLIENT_TICK.register(Ultracraft::clientTick);
 		ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> WorldMesh.chunkLoaded(chunk.getPos().x, chunk.getPos().z));
 		// ULTRAKILL's enemies are drawn by ULTRAKILL; their Minecraft stand-ins are only hitboxes
@@ -197,9 +221,8 @@ public final class Ultracraft implements ClientModInitializer {
 			});
 		}
 		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, Identifier.fromNamespaceAndPath("ultracraft", "v1"), (ctx, t) -> {
-			renderV1(ctx);
-			Teammates.render(Minecraft.getInstance(), ctx, t.getGameTimeDeltaPartialTick(false));
-			Spectate.render(Minecraft.getInstance(), ctx);
+			if (xaeroPresent) return; // xaero's minimap draws after the whole HUD (an InGameHud tail hook): draw over it in InGameHudMixin instead
+			renderOverlay(ctx, t.getGameTimeDeltaPartialTick(false));
 		});
 	}
 
@@ -229,6 +252,19 @@ public final class Ultracraft implements ClientModInitializer {
 		UkLink.send("VIEW " + view);
 	}
 
+	private static String langSent = "";
+
+	/**
+	 * Minecraft's language (LANG zh_cn): ULTRAKILL's terminal writes its shop text itself, so it has to be told.
+	 * Only on change - it cannot change while playing, and a language switch reloads the resources anyway.
+	 */
+	private static void sendLang(Minecraft mc) {
+		String lang = mc.getLanguageManager().getSelected();
+		if (lang == null || lang.equals(langSent) || !UkLink.connected) return;
+		langSent = lang;
+		UkLink.send("LANG " + lang);
+	}
+
 	/** This frame's input already went to ULTRAKILL, the moment its last frame came in (UkFrame.waitForNext). */
 	static boolean inputSentEarly;
 
@@ -243,7 +279,14 @@ public final class Ultracraft implements ClientModInitializer {
 		inputSentEarly = true;
 	}
 
-	private static void renderV1(GuiGraphics ctx) {
+	/** V1's overlay, from wherever it has to draw (its HUD slot, or over the whole HUD when xaero's maps are in). */
+	public static void renderOverlay(GuiGraphics ctx, float tickDelta) {
+		renderV1(ctx);
+		Teammates.render(Minecraft.getInstance(), ctx, tickDelta);
+		Spectate.render(Minecraft.getInstance(), ctx);
+	}
+
+	static void renderV1(GuiGraphics ctx) {
 		Minecraft mc = Minecraft.getInstance();
 		if (UkLink.connected && !inputSentEarly) sendInput(mc);
 		inputSentEarly = false;
@@ -257,13 +300,14 @@ public final class Ultracraft implements ClientModInitializer {
 		if (!active) {
 			if (UkLink.connected && mc.player != null) {
 				String where = UkLink.loadingScene.isEmpty() ? "" : " (" + UkLink.loadingScene + ")";
-				ctx.drawString(mc.font, UkLink.ready ? "ULTRAKILL ready - press F8 to become V1" : "ULTRAKILL connected - loading V1..." + where, 4, 4, 0xFFFFFF00);
+				ctx.drawString(mc.font, UkLink.ready ? "ULTRAKILL ready - press " + toggleKeyName() + " to become V1" : "ULTRAKILL connected - loading V1..." + where, 4, 4, 0xFFFFFF00);
 			}
 			return;
 		}
 		sendMobsDrawn(mc);
 		sendPuppets(mc);
 		sendView(mc);
+		sendLang(mc);
 		UcKeybindsScreen.pollGunKeys(mc, mc.screen == null && !uiMode && mc.mouseHandler.isMouseGrabbed());
 		Movement.frame(mc);
 		// asleep: Minecraft's own view from the bed (its fade to morning), no V1 layer
@@ -478,6 +522,15 @@ public final class Ultracraft implements ClientModInitializer {
 			// out of the world: Steve's view and V1's history start over
 			steveView = false;
 			everActive = false;
+			// The sync starts over too. ULTRAKILL is on a menu scene by now and sends no pose, so the last one
+			// from the world just left would be applied to the player every tick of the next world - the server
+			// keeps rejecting that position and pushing V1 back, which reads as being blocked by thin air. The
+			// origin goes with it: the next teleportV1 has to send a fresh ORIGIN and TP, not assume the old ones
+			// still hold (that is why switching to Steve and back used to be the only way out).
+			UkLink.pose = null;
+			originSent = false;
+			lastBlocks = null;
+			lastExport = null;
 			// and nothing of its P, gear or upgrades goes on to the next world
 			if (inWorld) {
 				inWorld = false;
@@ -487,6 +540,11 @@ public final class Ultracraft implements ClientModInitializer {
 		} else if (!inWorld && mc.player != null) {
 			// into a world: its own P, gear and upgrades, straight away
 			inWorld = true;
+			// The server forgot who was V1: it was a new one (single player), or this player left the last one. active
+			// survives leaving a world, so begin's registration would not run again on its own - without it the server
+			// takes V1 for Steve, refuses his moves (pushing him back as if by thin air) and reads his hits as an
+			// enemy's, which is also why a blast stopped falling Idols. Register again before anything else.
+			if (active) begin(mc);
 			if (UkLink.connected) UcNet.toServer("PROGRESS");
 		}
 		if (p == null || mc.level == null) return;
@@ -518,6 +576,10 @@ public final class Ultracraft implements ClientModInitializer {
 		if (!active || !UkLink.connected) return;
 		tick++;
 		UkLink.Pose pose = UkLink.pose;
+		// A pose older than this belongs to a ULTRAKILL that has stopped talking (a scene change, a level load,
+		// its window closing): following it would drag the player to wherever V1 last stood while the server
+		// keeps putting them back. Standing still for a tick is always better than teleporting to a stale spot.
+		if (pose != null && System.nanoTime() - pose.time > STALE_POSE_NS) pose = null;
 		boolean follow = Movement.tick(mc, p, pose);
 		if (pose != null && follow) {
 			// V1 is the player: Minecraft's player follows V1 (no Minecraft physics)
@@ -698,7 +760,7 @@ public final class Ultracraft implements ClientModInitializer {
 		hands = on;
 		UkLink.send("HANDS " + (on ? 1 : 0));
 		if (mc.player != null) {
-			mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal(on ? "Minecraft hands (V for guns)" : "V1's guns (V for Minecraft hands)"), true);
+			mc.player.displayClientMessage(net.minecraft.network.chat.Component.translatable(on ? "Minecraft hands (%s for guns)" : "V1's guns (%s for Minecraft hands)", handsKeyName()), true);
 		}
 	}
 
@@ -757,14 +819,23 @@ public final class Ultracraft implements ClientModInitializer {
 
 	private static void handle(Minecraft mc, String msg) {
 		if (msg.equals("READY") && mc.player != null && mc.player.connection != null) {
-			mc.gui.getChat().addMessage(net.minecraft.network.chat.Component.literal("[Ultracraft] ULTRAKILL is ready. Press F8 to become V1."));
+			mc.gui.getChat().addMessage(net.minecraft.network.chat.Component.translatable("[Ultracraft] ULTRAKILL is ready. Press %s to become V1.", toggleKeyName()));
 			UcCheats.sendServer();
+			// ULTRAKILL only now takes over the level (it strips the Sandbox and clears its camera), and every TP
+			// sent before that was dropped: send the origin and the position again so the terrain and V1 arrive in
+			// this tick instead of waiting for the next world tick to notice something is missing
+			if (active) {
+				originSent = false;
+				lastExport = null;
+				teleportV1(mc.player);
+			}
 		} else if (msg.equals("CONNECTED")) {
 			// a (re)started ULTRAKILL needs our window size again, and whether we're paused
 			lastW = -1;
 			pauseSent = false;
 			Fluids.reset();
 			// a restarted ULTRAKILL knows none of our textures, shops or sky yet, nor the settings
+			langSent = "";
 			UltracraftConfig.sendOpts();
 			CutoutTextures.reset();
 			ShopExport.reset();

@@ -9,7 +9,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.SubmitNodeCollector;
@@ -34,6 +36,14 @@ final class V1ArmMesh {
 	private static final float ITEM_DEPTH = 0.72f;
 
 	private record Part(float[] pos, float[] nrm, float[] uv, int[] idx, Identifier texture) {}
+
+	/**
+	 * A re-skin of V1's arm (UltraSkins and the packs built on it) paints almost nothing into the diffuse map and puts
+	 * all its detail in the glow map, which ULTRAKILL adds on top with emission. Drawing only the diffuse gives a black
+	 * arm, so the glow map is folded into the diffuse here and the result drawn as one ordinary lit texture: the detail
+	 * shows, and the arm takes Minecraft's lighting instead of glowing by itself.
+	 */
+	private static final int ARM_MAGIC = 0x474C4F57;
 
 	private static final List<Part> PARTS = new ArrayList<>();
 	private static float fov = 90f, hx, hy, hz = 1f, extent = 0.13f;
@@ -81,34 +91,38 @@ final class V1ArmMesh {
 		hz = Float.parseFloat(t[3]);
 		ByteBuffer b = ByteBuffer.wrap(Files.readAllBytes(bin)).order(ByteOrder.LITTLE_ENDIAN);
 		int parts = b.getInt();
+		// an older ULTRAKILL wrote only the part count here; a re-skin's glow maps came with this marker
+		boolean glowMaps = b.remaining() >= 4 && b.getInt(b.position()) == ARM_MAGIC;
+		if (glowMaps) b.getInt();
 		List<Part> list = new ArrayList<>();
 		var textures = Minecraft.getInstance().getTextureManager();
-		List<Identifier> texIds = new ArrayList<>();
+		Map<String, Identifier> merged = new HashMap<>();
 		for (int k = 0; k < parts; k++) {
-			int nv = b.getInt(), ni = b.getInt(), tex = b.getInt();
+			int nv = b.getInt(), ni = b.getInt(), tex = b.getInt(), glow = glowMaps ? b.getInt() : -1;
 			float[] p = new float[nv * 3], n = new float[nv * 3], uv = new float[nv * 2];
 			int[] ix = new int[ni];
 			for (int i = 0; i < p.length; i++) p[i] = b.getFloat();
 			for (int i = 0; i < n.length; i++) n[i] = b.getFloat();
 			for (int i = 0; i < uv.length; i++) uv[i] = b.getFloat();
 			for (int i = 0; i < ni; i++) ix[i] = b.getInt();
-			while (texIds.size() <= tex) {
-				int i = texIds.size();
-				Identifier id = Identifier.fromNamespaceAndPath("ultracraft", "dynamic/v1_arm_" + i);
-				Path png = cfg.resolve("ultracraft_arm_" + i + ".png");
-				if (Files.exists(png)) {
-					try (InputStream in = Files.newInputStream(png)) {
-						textures.register(id, new DynamicTexture(() -> "ultracraft V1 arm", NativeImage.read(in)));
-					}
-				}
-				texIds.add(id);
+			Identifier id = merged.get(tex + "/" + glow);
+			if (id == null) {
+				id = Identifier.fromNamespaceAndPath("ultracraft", "dynamic/v1_arm_" + merged.size());
+				NativeImage img = merge(png(cfg, "ultracraft_arm_" + tex + ".png"), glow >= 0 ? png(cfg, "ultracraft_arm_glow_" + glow + ".png") : null);
+				if (img != null) textures.register(id, new DynamicTexture(() -> "ultracraft V1 arm", img));
+				merged.put(tex + "/" + glow, id);
 			}
-			list.add(new Part(p, n, uv, ix, texIds.get(Math.max(0, tex))));
+			list.add(new Part(p, n, uv, ix, id));
 		}
 		// its longest side
 		float[] lo = {Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE}, hi = {-Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
 		for (Part part : list) for (int i = 0; i < part.pos.length; i++) { lo[i % 3] = Math.min(lo[i % 3], part.pos[i]); hi[i % 3] = Math.max(hi[i % 3], part.pos[i]); }
 		extent = Math.max(hi[0] - lo[0], Math.max(hi[1] - lo[1], hi[2] - lo[2]));
+		// a mesh whose vertices all landed in one spot carries no size to scale by: keep the arm already loaded
+		if (list.isEmpty() || extent < 0.01f) {
+			org.slf4j.LoggerFactory.getLogger("ultracraft").warn("V1 arm skipped: {} parts, extent {} - keeping the arm already loaded", list.size(), extent);
+			return;
+		}
 		PARTS.clear();
 		PARTS.addAll(list);
 		loaded = !PARTS.isEmpty();
@@ -127,22 +141,55 @@ final class V1ArmMesh {
 		poseStack.pushPose();
 		poseStack.scale(s, s, s);
 		for (Part part : PARTS) {
-			collector.submitCustomGeometry(poseStack, RenderTypes.entityCutoutNoCull(part.texture), (pose, vc) -> {
-				int[] ix = part.idx;
-				for (int t = 0; t + 2 < ix.length; t += 3) {
-					vertex(vc, pose, part, ix[t], fx, light);
-					vertex(vc, pose, part, ix[t + 1], fx, light);
-					vertex(vc, pose, part, ix[t + 2], fx, light);
-					vertex(vc, pose, part, ix[t + 2], fx, light);
-				}
-			});
+			collector.submitCustomGeometry(poseStack, RenderTypes.entityCutoutNoCull(part.texture), (pose, vc) -> emit(pose, vc, part, fx, light));
 		}
 		poseStack.popPose();
+	}
+
+	private static void emit(PoseStack.Pose pose, com.mojang.blaze3d.vertex.VertexConsumer vc, Part part, float fx, int light) {
+		int[] ix = part.idx;
+		for (int t = 0; t + 2 < ix.length; t += 3) {
+			vertex(vc, pose, part, ix[t], fx, light);
+			vertex(vc, pose, part, ix[t + 1], fx, light);
+			vertex(vc, pose, part, ix[t + 2], fx, light);
+			vertex(vc, pose, part, ix[t + 2], fx, light);
+		}
 	}
 
 	private static void vertex(com.mojang.blaze3d.vertex.VertexConsumer vc, PoseStack.Pose pose, Part part, int i, float fx, int light) {
 		float x = (part.pos[i * 3] - hx) * fx, y = part.pos[i * 3 + 1] - hy, z = -(part.pos[i * 3 + 2] - hz);
 		vc.addVertex(pose, x, y, z).setColor(-1).setUv(part.uv[i * 2], 1f - part.uv[i * 2 + 1]).setOverlay(OverlayTexture.NO_OVERLAY).setLight(light)
 			.setNormal(pose, part.nrm[i * 3] * fx, part.nrm[i * 3 + 1], -part.nrm[i * 3 + 2]);
+	}
+
+	private static NativeImage png(Path cfg, String name) {
+		Path f = cfg.resolve(name);
+		if (!Files.exists(f)) return null;
+		try (InputStream in = Files.newInputStream(f)) {
+			return NativeImage.read(in);
+		} catch (Exception e) {
+			org.slf4j.LoggerFactory.getLogger("ultracraft").warn("V1 arm texture {}: {}", name, e.toString());
+			return null;
+		}
+	}
+
+	/**
+	 * The diffuse with ULTRAKILL's glow map added on top, as one texture. A re-skin paints its detail into the glow map
+	 * while the diffuse stays black, so adding the two keeps that detail and still leaves the arm an ordinary lit
+	 * surface, instead of the self-lit overlay an emission pass would give.
+	 */
+	private static NativeImage merge(NativeImage base, NativeImage glow) {
+		if (base == null) return glow;
+		if (glow == null || base.getWidth() != glow.getWidth() || base.getHeight() != glow.getHeight()) return base;
+		for (int y = 0; y < base.getHeight(); y++) {
+			for (int x = 0; x < base.getWidth(); x++) {
+				int a = base.getPixel(x, y), g = glow.getPixel(x, y);
+				int r = Math.min(255, ((a >> 16) & 255) + ((g >> 16) & 255));
+				int gg = Math.min(255, ((a >> 8) & 255) + ((g >> 8) & 255));
+				int b = Math.min(255, (a & 255) + (g & 255));
+				base.setPixel(x, y, (255 << 24) | (r << 16) | (gg << 8) | b);
+			}
+		}
+		return base;
 	}
 }

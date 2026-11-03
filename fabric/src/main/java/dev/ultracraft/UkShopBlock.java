@@ -123,8 +123,10 @@ public final class UkShopBlock extends HorizontalDirectionalBlock implements Ent
 	@Override
 	protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
 		if (level.isClientSide() && !Ultracraft.active) {
-			player.displayClientMessage(Component.literal(UkLink.connected ? "The shop is ULTRAKILL's: become V1 (F8) and walk up to the screen"
-				: "The shop is ULTRAKILL's: start ULTRAKILL and become V1 to use it"), true);
+			Component msg = UkLink.connected
+				? Component.translatable("The shop is ULTRAKILL's: become V1 (%s) and walk up to the screen", Ultracraft.toggleKeyName())
+				: Component.translatable("The shop is ULTRAKILL's: start ULTRAKILL and become V1 to use it");
+			player.displayClientMessage(msg, true);
 		}
 		return InteractionResult.SUCCESS;
 	}

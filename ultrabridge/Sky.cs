@@ -21,6 +21,18 @@ namespace UltraBridge
             ApplySky();
         }
 
+        /// <summary>Hand the view over to Minecraft: the Sandbox's own sky goes, and the camera clears to nothing so
+        /// Minecraft's sky and terrain show through. Called once Minecraft actually joins (the first TP), not when the
+        /// level is merely prepped - prepping happens while Minecraft is still loading, and an empty clear there is a
+        /// black window for however long that load takes.</summary>
+        void TakeOverView()
+        {
+            if (viewTaken) return;
+            viewTaken = true;
+            ApplySky();
+            Plugin.Log.LogInfo("view handed over: sky " + (skyAddress ?? "-"));
+        }
+
         /// <summary>The sky as Minecraft last asked (again once the level is ready).</summary>
         void ApplySky()
         {

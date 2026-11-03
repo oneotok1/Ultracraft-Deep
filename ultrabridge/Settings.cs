@@ -17,6 +17,10 @@ namespace UltraBridge
 {
     public partial class Bridge
     {
+        /// <summary>V1's explosions reach ULTRAKILL as a fist hit, as the old version had it (an Idol falls to a
+        /// blast the way it falls to a punch). Off: they arrive as explosions.</summary>
+        public static bool NukesHitAsMelee = true;
+
         /// <summary>Impact frames (TimeController.HitStop/TrueStop) last this many times as long.</summary>
         public static float ImpactScale = 1f;
 
@@ -51,6 +55,7 @@ namespace UltraBridge
                         if (p[0] == "gore") ExtraGore = p[1] == "1";
                         if (p[0] == "stains") SetStains(p[1] == "1");
                         if (p[0] == "pool") Bridge.PoolCeiling = p[1] == "1";
+                        if (p[0] == "nukeMelee") NukesHitAsMelee = p[1] == "1";
                     }
                     break;
                 case "VIEW":
@@ -164,7 +169,9 @@ namespace UltraBridge
                     if (nm != null)
                     {
                         NmDifficulty(nm) = d;
-                        if (nm.hp > MaxHp(nm)) nm.hp = MaxHp(nm);
+                        // the bar itself moved (400 on the usual 100, 800 on Harmless), so resize rather than clip
+                        // back to the difficulty's own full health - SyncMax keeps V1's share of the bar
+                        SyncMax(nm);
                         lastHp = -1;
                         Plugin.Log.LogInfo("ULTRAKILL difficulty " + d + ": V1's full health " + MaxHp(nm));
                     }

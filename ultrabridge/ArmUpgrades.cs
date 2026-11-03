@@ -17,6 +17,12 @@ namespace UltraBridge
     {
     }
 
+    /// <summary>A blast that leaves projectiles alone: Counterblast's goes off in front of V1, right where the parry
+    /// has just sent a projectile off, and ULTRAKILL's explosion would turn it toward the blast's own centre.</summary>
+    public class NoDeflect : MonoBehaviour
+    {
+    }
+
     public partial class Bridge
     {
         /// <summary>ULTRAKILL's own explosion, size times as big. byEnemy: it hurts V1 and Minecraft's mobs, never
@@ -159,7 +165,12 @@ namespace UltraBridge
             var cam = MonoSingleton<CameraController>.Instance;
             if (nm == null || cam == null) return;
             float size = Arm("arm0.counter");
-            if (size > 0f) SpawnBlast(cam.transform.position + cam.transform.forward * 4f, size, false, false);
+            if (size > 0f)
+            {
+                // it goes off right where the parry just sent the projectile off, so it must not shove that one around
+                var blast = SpawnBlast(cam.transform.position + cam.transform.forward * 4f, size, false, false);
+                if (blast != null) blast.AddComponent<NoDeflect>();
+            }
             float stamina = Arm("arm0.adrenaline");
             if (stamina > 0f)
             {
@@ -196,6 +207,20 @@ namespace UltraBridge
     static class ArmParry
     {
         static void Postfix() => Bridge.Parried();
+    }
+
+    /// <summary>Counterblast's own blast goes off four metres in front of V1, where the parry has just sent the
+    /// projectile off; ULTRAKILL's explosion turns every projectile it touches toward the middle of the blast
+    /// (Explosion.Collide), which would send that one straight back. It keeps its heading instead.</summary>
+    [HarmonyPatch(typeof(Explosion), "Collide")]
+    static class ArmCounterBlast
+    {
+        static bool Prefix(Explosion __instance, Collider other)
+        {
+            if (__instance.GetComponentInParent<NoDeflect>() == null) return true;
+            var proj = other != null ? other.GetComponentInParent<Projectile>() : null;
+            return proj == null || !proj.parried;
+        }
     }
 
     /// <summary>Ironclad: the Knuckleblaster out, V1 takes less.</summary>

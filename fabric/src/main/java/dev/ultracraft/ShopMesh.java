@@ -118,7 +118,7 @@ final class ShopMesh {
 	 * ULTRAKILL's glow map is opaque, black where nothing glows; Minecraft's glow pass (eyes) blends by alpha. So each
 	 * pixel's brightness becomes its alpha (and its colour is brought up to full): what glows shows, the rest doesn't.
 	 */
-	private static NativeImage glowing(NativeImage img) {
+	static NativeImage glowing(NativeImage img) {
 		for (int y = 0; y < img.getHeight(); y++) {
 			for (int x = 0; x < img.getWidth(); x++) {
 				int c = img.getPixel(x, y);

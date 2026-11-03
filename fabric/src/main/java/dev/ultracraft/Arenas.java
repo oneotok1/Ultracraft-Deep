@@ -117,7 +117,7 @@ final class Arenas {
 		if (data.cleared.contains(id)) {
 			if (inside && now - st.arenaNoticeAt > 20 * 30) {
 				st.arenaNoticeAt = now;
-				sp.displayClientMessage(Component.literal(L.title + " ARENA: CLEARED").withStyle(ChatFormatting.GRAY), true);
+				sp.displayClientMessage(Component.literal(L.title).append(Component.translatable(" ARENA: CLEARED")).withStyle(ChatFormatting.GRAY), true);
 			}
 			return;
 		}
@@ -127,15 +127,15 @@ final class Arenas {
 		if (!inside) {
 			if (now - st.arenaNoticeAt > 20 * 10) {
 				st.arenaNoticeAt = now;
-				sp.displayClientMessage(Component.literal(L.title + " ARENA").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)
-					.append(Component.literal("   " + boss.name() + " waits inside").withStyle(ChatFormatting.GRAY)), true);
+				sp.displayClientMessage(Component.literal(L.title).append(Component.translatable(" ARENA")).withStyle(ChatFormatting.RED, ChatFormatting.BOLD)
+					.append(Component.literal("   " + boss.name()).append(Component.translatable(" waits inside")).withStyle(ChatFormatting.GRAY)), true);
 			}
 			return;
 		}
 		if (UkBosses.busy()) return;
 		// the layer's title, as ULTRAKILL opens a level
 		sp.connection.send(new ClientboundSetTitlesAnimationPacket(5, 40, 10));
-		sp.connection.send(new ClientboundSetSubtitleTextPacket(Component.literal("ARENA").withStyle(ChatFormatting.GRAY)));
+		sp.connection.send(new ClientboundSetSubtitleTextPacket(Component.translatable("ARENA").withStyle(ChatFormatting.GRAY)));
 		sp.connection.send(new ClientboundSetTitleTextPacket(Component.literal(L.title).withStyle(ChatFormatting.RED, ChatFormatting.BOLD)));
 		Vec3 at = new Vec3(c.getX() + 0.5, c.getY() + 2, c.getZ() + 0.5);
 		UkBosses.arena(sp, bossKey, at, L.key, () -> cleared(sp, level, piece, id, L));
@@ -158,10 +158,10 @@ final class Arenas {
 			for (int i = 0; i < loot.size() && i < be.getContainerSize(); i++) be.setItem(i * 2 % be.getContainerSize(), loot.get(i));
 		}
 		sp.connection.send(new ClientboundSetTitlesAnimationPacket(5, 60, 15));
-		sp.connection.send(new ClientboundSetSubtitleTextPacket(Component.literal("ARENA CLEARED").withStyle(ChatFormatting.GOLD)));
+		sp.connection.send(new ClientboundSetSubtitleTextPacket(Component.translatable("ARENA CLEARED").withStyle(ChatFormatting.GOLD)));
 		sp.connection.send(new ClientboundSetTitleTextPacket(Component.literal(L.title).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)));
 		level.playSound(null, chest, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundSource.PLAYERS, 1f, 1f);
-		sp.sendSystemMessage(Component.literal("[Ultracraft] " + L.title + " arena cleared: a chest of loot waits on the dais.").withStyle(ChatFormatting.GOLD));
+		sp.sendSystemMessage(Component.literal("[Ultracraft] " + L.title + " ").append(Component.translatable("arena cleared: a chest of loot waits on the dais.")).withStyle(ChatFormatting.GOLD));
 	}
 
 	/** The deeper the layer, the better. */

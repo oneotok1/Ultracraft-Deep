@@ -261,6 +261,8 @@ namespace UltraBridge
         public bool LevelReady => levelPrepared;
         bool v1Landed;
         bool tpReceived;
+        bool viewTaken;
+        string pendingTp;
         float nextLandTry;
         bool sawLevelStart;
         string lastScene = "";
@@ -269,6 +271,11 @@ namespace UltraBridge
         Keyboard kb;
         Mouse mouse;
         static readonly AccessTools.FieldRef<CameraController, bool> CamZooming = AccessTools.FieldRefAccess<CameraController, bool>("zooming");
+        // the weapons' own fire cooldowns (private; Upgrades.cs touches the same fields for its recharges)
+        static readonly AccessTools.FieldRef<Nailgun, float> NailgunFireCooldown = AccessTools.FieldRefAccess<Nailgun, float>("fireCooldown");
+        static readonly AccessTools.FieldRef<RocketLauncher, float> RocketCooldown = AccessTools.FieldRefAccess<RocketLauncher, float>("cooldown");
+        static readonly AccessTools.FieldRef<ShotgunHammer, float> HammerCooldown = AccessTools.FieldRefAccess<ShotgunHammer, float>("hammerCooldown");
+        static readonly AccessTools.FieldRef<HookArm, float> HookCooldown = AccessTools.FieldRefAccess<HookArm, float>("cooldown");
         readonly HashSet<Key> held = new HashSet<Key>();
         Vector2 mouseDelta;
         float wheel;
@@ -279,6 +286,9 @@ namespace UltraBridge
         GameObject sectionRoot;
         readonly Dictionary<string, GameObject> sections = new Dictionary<string, GameObject>();
         readonly Queue<string> sectionQueue = new Queue<string>();
+        // a cleared (SECX/SECCLR) section must also kill any SEC of it still waiting in the queue, or the old mesh
+        // is built back afterwards and stays forever (the Cyber Grind's retracting columns left such ghosts)
+        readonly Dictionary<string, int> sectionEpoch = new Dictionary<string, int>();
         float sectionMs = 2f;
 
         // ULTRAKILL menus (the Spawner Arm's spawn menu, alter menu) free the cursor; Minecraft then shows its own
@@ -380,6 +390,7 @@ namespace UltraBridge
         // debug FPSINFO: how long ULTRAKILL's recent frames took
         readonly float[] frameTimes = new float[240];
         float perfLogAt;
+        float perfCmdUntil;
         int frameCount;
 
         void Update()
@@ -405,8 +416,14 @@ namespace UltraBridge
             }
             while (Net.Inbox.TryDequeue(out var line))
             {
+                var hw = System.Diagnostics.Stopwatch.StartNew();
                 try { Handle(line); }
                 catch (Exception e) { Plugin.Log.LogWarning("handle '" + Trunc(line) + "': " + e); }
+                if (perfCmdUntil > 0f && Time.unscaledTime < perfCmdUntil)
+                {
+                    long ms = hw.ElapsedMilliseconds;
+                    if (ms >= 2) Plugin.Log.LogInfo("cmd " + (line.Length > 24 ? line.Substring(0, line.IndexOf(' ') + 1) : line) + " took " + ms + " ms (" + line.Length + " chars)");
+                }
             }
 
             HoldPause();
@@ -416,7 +433,10 @@ namespace UltraBridge
                 lastScene = scene;
                 levelPrepared = false;
                 v1Landed = false;
+                armSig = null;
                 tpReceived = false;
+                viewTaken = false;
+                pendingTp = null;
                 sawLevelStart = false;
                 uiMode = false;
                 sections.Clear();
@@ -438,17 +458,29 @@ namespace UltraBridge
                 navData.Clear();
                 navSettings.Clear();
                 navBaking = false;
+                navWarmed = false;
                 navDirty = true;
                 navBounds = new Bounds();
                 dollRoot = null;
                 dollFailed = false;
+                ResetArmExport();
                 Plugin.Log.LogInfo("scene: " + scene);
             }
-            // a save that hasn't been through the tutorial gets sent there by the intro (IntroViolenceScreen); V1 is
-            // needed in the Sandbox all the same (ForMinecraftSkipTutorial keeps the intro from going there at all)
-            if ((Net.Connected || LaunchedForMinecraft) && (scene == "Main Menu" || scene == "Intro" || scene == "Tutorial") && Time.unscaledTime > 3f)
+            // ULTRAKILL opens on Intro, plays it again, and only then reaches the Main Menu. Connected to Minecraft
+            // both of those are dead weight, so short-circuit straight to the menu. The menu itself must be ENTERED
+            // and not merely passed over: skin plugins (UltraSkins and friends) hook its SceneLoaded handler, run
+            // once, and never again, so going from Intro straight to the Sandbox leaves the arm on ULTRAKILL's own
+            // textures. Loading the Sandbox the instant the menu reports loaded is still late enough.
+            if ((Net.Connected || LaunchedForMinecraft) && Time.unscaledTime > 3f)
             {
-                SceneHelper.LoadScene("uk_construct");
+                if (scene == "Main Menu")
+                {
+                    SceneHelper.LoadScene("uk_construct");
+                }
+                else if (scene == "Intro" || scene == "Tutorial")
+                {
+                    SceneHelper.LoadScene("Main Menu");
+                }
             }
             // Never touch MonoSingleton<T>.Instance before the level is ready: a lookup that finds nothing uses up
             // the singleton's one search, and objects whose Awake asks for it later get null forever. That is what
@@ -463,6 +495,7 @@ namespace UltraBridge
             {
                 PrepareLevel();
                 perfLogAt = Time.unscaledTime + 8f;
+                perfCmdUntil = Time.unscaledTime + 20f;
             }
             MaybeBossTest();
             // one PERF line in the log once things have settled: what a laggy player's log shows without asking
@@ -569,6 +602,18 @@ namespace UltraBridge
             string rest = sp < 0 ? "" : line.Substring(sp + 1);
             switch (cmd)
             {
+                case "LANG":
+                {
+                    // LANG zh_cn: Minecraft's language, so the shop's own text can come out in it
+                    if (!string.IsNullOrEmpty(rest) && rest != McLang)
+                    {
+                        McLang = rest;
+                        UpgradeTexts();
+                        LocalizeMenuButton();
+                        ShopTexts();
+                    }
+                    break;
+                }
                 case "MC_MAX":
                 case "ABSORB":
                     HandleVitals(cmd, rest);
@@ -593,8 +638,13 @@ namespace UltraBridge
                     break;
                 }
                 case "SEC":
+                {
+                    // arriving after a SECX cleared this section: it is fresh geometry, not a stale queue entry
+                    var p = rest.Split(new[] { ' ' }, 4);
+                    if (p.Length >= 3) sectionEpoch.Remove(p[0] + "," + p[1] + "," + p[2]);
                     sectionQueue.Enqueue(rest);
                     break;
+                }
                 case "PROJS":
                     ApplyProjectiles(rest);
                     break;
@@ -606,9 +656,15 @@ namespace UltraBridge
                     break;
                 }
                 case "SECX":
-                    RemoveSection(rest.Replace(' ', ','));
+                {
+                    string key = rest.Replace(' ', ',');
+                    // any queued rebuild of it is stale now: it would bring the old mesh back after the clear
+                    sectionEpoch[key] = sectionEpoch.TryGetValue(key, out int e) ? e + 1 : 1;
+                    RemoveSection(key);
                     break;
+                }
                 case "SECCLR":
+                    foreach (var kv in sectionEpoch) sectionEpoch[kv.Key] = kv.Value + 1;
                     ClearSections();
                     break;
                 case "TESTCOIN":
@@ -691,7 +747,12 @@ namespace UltraBridge
                 {
                     // TP x y z yaw pitch (feet, Minecraft coordinates)
                     var a = rest.Split(' ');
-                    if (!levelPrepared) break;
+                    // Minecraft sends this from its own world load, which usually beats the Sandbox's own prep (and
+                    // its READY): hold on to it and replay it once the level is prepared rather than dropping it -
+                    // the first position would otherwise only arrive on Minecraft's next world tick.
+                    if (!levelPrepared) { pendingTp = rest; break; }
+                    pendingTp = null;
+                    TakeOverView();
                     var nm = MonoSingleton<NewMovement>.Instance;
                     if (nm == null) break;
                     var p = McToUk(new Vector3(F(a[0]), F(a[1]), F(a[2]))) + Vector3.up * 1.5f;
@@ -776,7 +837,8 @@ namespace UltraBridge
                 }
                 case "EHURT":
                 {
-                    // EHURT <ULTRAKILL enemy id> <Minecraft damage> <attacker: mob id, V1, V1:<teammate's id> or -1> [fire]:
+                    // EHURT <ULTRAKILL enemy id> <Minecraft damage> <attacker: mob id, V1, V1:<teammate's id> or -1>
+                    // <fire|-> [boom]:
                     // something in Minecraft hurt one of ULTRAKILL's enemies (a mob, a V1's Minecraft weapon, lava,
                     // fire, cactus...)
                     var a = rest.Split(' ');
@@ -784,7 +846,9 @@ namespace UltraBridge
                     string by = a.Length > 2 ? a[2] : "-1";
                     int mobId = int.TryParse(by, out var m) ? m : -1;
                     int mate = by.StartsWith("V1:") && int.TryParse(by.Substring(3), out var mm) ? mm : 0;
-                    EnemyHurtByMob(int.Parse(a[0]), F(a[1]), mobId, by == "V1" || mate != 0, a.Length > 3 ? a[3] : null, mate);
+                    string kind = a.Length > 3 && a[3] != "-" ? a[3] : null;
+                    bool boom = a.Length > 4 && a[4] == "boom";
+                    EnemyHurtByMob(int.Parse(a[0]), F(a[1]), mobId, by == "V1" || mate != 0, kind, mate, boom);
                     break;
                 }
                 case "FLUID":
@@ -898,6 +962,50 @@ namespace UltraBridge
                     if (fnm == null || fnm.dead) break;
                     fnm.ResetHardDamage();
                     fnm.FullHeal(true);
+                    break;
+                }
+                case "UKINSTAKILL":
+                {
+                    // UKINSTAKILL <instance id>: one of ULTRAKILL's enemies fell off the Cyber Grind's edge (void death
+                    // on) and dies there, as the Grind counts a fall as gone; Minecraft heard which one it was
+                    if (levelPrepared && ukEnemies.TryGetValue(int.Parse(rest.Trim()), out var eid) && eid != null && !eid.dead)
+                    {
+                        try { eid.InstaKill(); }
+                        catch (Exception ex) { Plugin.Log.LogDebug("instakill: " + ex.Message); }
+                    }
+                    break;
+                }
+                case "GRINDRESTORE":
+                {
+                    // GRINDRESTORE: a Cyber Grind wave cleared — stamina and weapon charges back to full
+                    // (FULLHEAL, sent just before this one, already did health and hard damage)
+                    var gnm = levelPrepared ? MonoSingleton<NewMovement>.Instance : null;
+                    var wc = levelPrepared ? MonoSingleton<WeaponCharges>.Instance : null;
+                    if (gnm == null || gnm.dead) break;
+                    try
+                    {
+                        gnm.boostCharge = 300f;
+                        if (wc != null)
+                        {
+                            // every variant charge, full again (the caps are the full values Upgrades.cs recharges to)
+                            wc.rev0charge = 100f; wc.rev1charge = 400f; wc.rev2charge = 300f;
+                            wc.shoAltNadeCharge = 1f; wc.shoSawCharge = 1f;
+                            wc.naiMagnetCharge = 3f; wc.naiZapperRecharge = 5f;
+                            wc.naiHeatsinks = 2f; wc.naiSawHeatsinks = 1f;
+                            wc.naiAmmo = 100f; wc.naiSaws = 10f;
+                            wc.raicharge = 5f;
+                            wc.rocketCannonballCharge = 1f; wc.rocketNapalmFuel = 1f;
+                            if (!wc.rocketFrozen) wc.rocketFreezeTime = 5f;
+                            wc.punchStamina = 3f;
+                        }
+                        // each weapon out: its own fire cooldowns, ready again
+                        foreach (var g in FindObjectsOfType<Revolver>()) { g.shootCharge = 100f; g.pierceCharge = 100f; }
+                        foreach (var n in FindObjectsOfType<Nailgun>()) NailgunFireCooldown(n) = 0f;
+                        foreach (var r in FindObjectsOfType<RocketLauncher>()) RocketCooldown(r) = 0f;
+                        foreach (var h in FindObjectsOfType<ShotgunHammer>()) HammerCooldown(h) = 0f;
+                        foreach (var w in FindObjectsOfType<HookArm>()) HookCooldown(w) = 0f;
+                    }
+                    catch (Exception e) { Plugin.Log.LogDebug("grind restore: " + e.Message); }
                     break;
                 }
                 case "DUEL":
@@ -1065,13 +1173,11 @@ namespace UltraBridge
                 }
             }
             Plugin.Log.LogInfo("Sandbox asleep: " + sandboxSlept + " roots off; awake (ULTRAKILL scripts in them): " + string.Join(" ", sandboxKept));
-            RenderSettings.skybox = null;
             RenderSettings.fog = false;
-            if (cc != null)
-            {
-                cc.cam.clearFlags = CameraClearFlags.SolidColor;
-                cc.cam.backgroundColor = new Color(0, 0, 0, 0);
-            }
+            // The Sandbox's own sky and the camera's clear stay until Minecraft actually joins (TP, see TakeOverView):
+            // the Sandbox is prepped while Minecraft is still on its title screen, and clearing to transparent here
+            // would leave nothing but Minecraft's loading void behind the hole - a black window until the terrain
+            // arrives. Keeping the sky up means the player watches the Sandbox sky until the first blocks land.
             NoBakedOcclusion();
             SandboxLampsOff();
             blockRoot = new GameObject("McBlocks");
@@ -1079,11 +1185,48 @@ namespace UltraBridge
             // hold V1 still until Minecraft has sent the ground and a start position
             nm.rb.isKinematic = true;
             levelPrepared = true;
-            ApplySky();
             Net.Send("READY");
             SendGrindPatterns();
             PrefsOnReady();
             Plugin.Log.LogInfo("level prepared, hid " + hidden + " renderers/colliders");
+            // Minecraft's first TP usually arrives before this point (it comes from its own world load, which
+            // finishes well before the Sandbox is prepped): replay it now so V1 lands and the view turns over in
+            // this same frame instead of waiting for Minecraft's next world tick to send another one.
+            if (pendingTp != null) { var tp = pendingTp; pendingTp = null; Handle("TP " + tp); }
+            WarmNavMesh();
+        }
+
+        /// <summary>The first navmesh build of a session costs about a second whatever it bakes (0.61 s for a single
+        /// section, against 0.05 s for 36 of them right after), so pay that here: the level is prepped while Minecraft
+        /// is still loading its world, and the stall lands behind its loading screen instead of when V1 arrives.</summary>
+        void WarmNavMesh()
+        {
+            if (navWarmed) return;
+            navWarmed = true;
+            try
+            {
+                if (navSettings.Count == 0)
+                {
+                    NavMesh.RemoveAllNavMeshData();
+                    for (int i = 0; i < NavMesh.GetSettingsCount(); i++)
+                    {
+                        var s = NavMesh.GetSettingsByIndex(i);
+                        s.agentClimb = Mathf.Max(s.agentClimb, K * 1.05f);
+                        s.overrideVoxelSize = true;
+                        s.voxelSize = Mathf.Clamp(s.agentRadius / 2f, 0.2f, 0.5f);
+                        var d = new NavMeshData(s.agentTypeID);
+                        navSettings.Add(s);
+                        navData.Add(d);
+                        navInstances.Add(NavMesh.AddNavMeshData(d));
+                    }
+                }
+                var empty = new List<NavMeshBuildSource>();
+                var box = new Bounds(Vector3.zero, Vector3.one * K);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                for (int i = 0; i < navSettings.Count; i++) NavMeshBuilder.UpdateNavMeshData(navData[i], navSettings[i], empty, box);
+                Plugin.Log.LogInfo("navmesh: warmed " + navSettings.Count + " agent types in " + sw.ElapsedMilliseconds + " ms");
+            }
+            catch (Exception e) { Plugin.Log.LogWarning("navmesh warm: " + e.Message); }
         }
 
         /// <summary>The Sandbox ships baked occlusion culling for its own (now hidden) walls. Left on, it culls our
@@ -1195,6 +1338,8 @@ namespace UltraBridge
             var parts = rest.Split(new[] { ' ' }, 4);
             if (parts.Length < 3) return;
             string key = parts[0] + "," + parts[1] + "," + parts[2];
+            // cleared (or cleared and rebuilt) while this sat in the queue: stale, drop it
+            if (sectionEpoch.TryGetValue(key, out int epoch) && epoch > 0 && !sections.ContainsKey(key)) return;
             string data = parts.Length > 3 ? parts[3] : "";
             var origin = new Vector3(int.Parse(parts[0]) * 16, int.Parse(parts[1]) * 16, int.Parse(parts[2]) * 16);
             var verts = new List<Vector3>();
@@ -2401,10 +2546,15 @@ namespace UltraBridge
                 ukEnemyAt[id] = b.center;
                 var feet = UkToMc(new Vector3(b.center.x, b.min.y, b.center.z));
                 float w = Mathf.Clamp(Mathf.Max(b.size.x, b.size.z) / K, 0.3f, 12f), h = Mathf.Clamp(b.size.y / K, 0.3f, 16f);
+                // the enemy's max health for Minecraft-side viewers (Jade); appended last so the Java side's
+                // index parsing of older records still works (a[11], absent = old format)
+                var enComp = eid.GetComponent<Enemy>();
+                float maxHp = enComp != null && enComp.originalHealth > 0f ? enComp.originalHealth : eid.health;
                 sb.Append(id).Append(',').Append(eid.enemyType).Append(',').Append(S(feet.x)).Append(',').Append(S(feet.y)).Append(',').Append(S(feet.z))
                   .Append(',').Append(S(w)).Append(',').Append(S(h)).Append(',').Append(S(eid.health))
                   // what the other players' ULTRAKILLs need to show it as a puppet
-                  .Append(',').Append(PuppetKey(eid)).Append(',').Append(S(eid.transform.eulerAngles.y)).Append(',').Append(AnimState(eid)).Append(';');
+                  .Append(',').Append(PuppetKey(eid)).Append(',').Append(S(eid.transform.eulerAngles.y)).Append(',').Append(AnimState(eid))
+                  .Append(',').Append(S(maxHp)).Append(';');
             }
             Net.Send(sb.ToString());
             // the ones that died since: Minecraft drops their experience (a destroyed enemy's fields still read: one
@@ -2502,7 +2652,7 @@ namespace UltraBridge
 
         /// <summary>A mob's hit (bite, arrow, blast) on one of ULTRAKILL's enemies: real ULTRAKILL damage (its own blood
         /// and death), and the enemy turns on that mob unless V1 has its attention.</summary>
-        void EnemyHurtByMob(int ukId, float mcDamage, int mobId, bool byV1 = false, string kind = null, int mate = 0)
+        void EnemyHurtByMob(int ukId, float mcDamage, int mobId, bool byV1 = false, string kind = null, int mate = 0, bool boom = false)
         {
             if (!ukEnemies.TryGetValue(ukId, out var eid) || eid == null || eid.dead) return;
             var b = EnemyBounds(eid);
@@ -2511,7 +2661,15 @@ namespace UltraBridge
             // a teammate's Minecraft weapon may be what kills it; a mob's bite never claims the kill for anyone
             if (mate != 0) NoteMateHit(eid, mate);
             else if (byV1) ClearMateHit(eid);
-            eid.hitter = kind == "fire" ? "fire" : byV1 ? "punch" : "enemy";
+            // a blast reaches ULTRAKILL as a fist hit unless the switch says otherwise: that is what lets it
+            // kill an Idol, which only a fist, the hammer or a ground slam may do
+            eid.hitter = kind == "fire" ? "fire" : !byV1 ? "enemy" : boom && !NukesHitAsMelee ? "explosion" : "punch";
+            // a blast on an Idol is the one case where the hitter decides whether it dies at all (only a fist, the
+            // hammer or a ground slam may kill one), so that is the one worth a log line: boom, who, switch, hitter
+            if (boom || eid.enemyType == EnemyType.Idol)
+                Plugin.Log.LogInfo("EHURT boom=" + boom + " byV1=" + byV1 + " mate=" + mate + " kind=" + (kind ?? "-")
+                    + " nukeMelee=" + NukesHitAsMelee + " -> hitter='" + eid.hitter + "' type=" + eid.enemyType
+                    + " dmg=" + mcDamage + " ukId=" + ukId);
             eid.DeliverDamage(limb != null ? limb.gameObject : eid.gameObject, Vector3.zero, b.center, mcDamage / 10f, false, 0f, null);
             if (byV1)
             {
@@ -2576,6 +2734,7 @@ namespace UltraBridge
         Bounds navBounds;
         Vector3 navCenter;
         bool navDirty = true, navBaking;
+        bool navWarmed;
         float nextNavBake, navStarted;
         // (wide enough that enemies coming from afar have ground to walk on before they reach V1)
         // Terrains with more solid blocks in the box (the Nether above all) cost proportionally more to bake, so

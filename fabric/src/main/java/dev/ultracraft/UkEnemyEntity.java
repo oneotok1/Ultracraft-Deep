@@ -1,6 +1,7 @@
 package dev.ultracraft;
 
 import java.util.UUID;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -32,6 +33,17 @@ public class UkEnemyEntity extends PathfinderMob implements Enemy {
 	private static final EntityDataAccessor<Float> YAW = SynchedEntityData.defineId(UkEnemyEntity.class, EntityDataSerializers.FLOAT);
 	private static final EntityDataAccessor<Integer> ANIM = SynchedEntityData.defineId(UkEnemyEntity.class, EntityDataSerializers.INT);
 	private static final EntityDataAccessor<Boolean> DEAD = SynchedEntityData.defineId(UkEnemyEntity.class, EntityDataSerializers.BOOLEAN);
+	// ULTRAKILL's own health for this enemy (-1 = not reported yet); Jade and other client-side viewers read it
+	// through getHealth(), on the scale in UK_TO_MC. The max goes through Minecraft's own synced MAX_HEALTH
+	// attribute (getMaxHealth() is final and reads exactly that attribute).
+	private static final EntityDataAccessor<Float> UK_HP = SynchedEntityData.defineId(UkEnemyEntity.class, EntityDataSerializers.FLOAT);
+	/**
+	 * One point of ULTRAKILL health, in Minecraft health points. ULTRAKILL's mooks sit in the low single digits
+	 * (a Filth is 2, a Soldier around 5), so a 1:1 reading would paint every one of them as a sliver of a heart
+	 * and the MAX_HEALTH attribute's floor of 1 would clamp the small ones into a full bar. Two MC points per
+	 * UK point (UK 1 = MC 1 heart) keeps a Filth at a legible 2 hearts while a boss with 100 HP fills 100.
+	 */
+	static final float UK_TO_MC = 2f;
 
 	public int ukId;
 	public String ukType = "";
@@ -58,6 +70,7 @@ public class UkEnemyEntity extends PathfinderMob implements Enemy {
 		builder.define(YAW, 0f);
 		builder.define(ANIM, 0);
 		builder.define(DEAD, false);
+		builder.define(UK_HP, -1f);
 	}
 
 	/** From the owner's ULTRAKILL (UKE): what it is, which way it faces, what it's playing. */
@@ -76,6 +89,28 @@ public class UkEnemyEntity extends PathfinderMob implements Enemy {
 		return entityData.get(KEY);
 	}
 
+	/**
+	 * Jade &amp; friends show the real ULTRAKILL enemy name instead of the generic type name.
+	 * The name is read from the synched KEY, never from ukType: ukType is only assigned on the
+	 * server (UltracraftCommon.updateUkEnemies), so it is still "" on the client that renders names.
+	 * Every lookup carries a readable fallback so an unknown spawnable never shows a raw key.
+	 */
+	@Override
+	public Component getName() {
+		String k = key();
+		if (k != null && k.length() > 2) {
+			String rest = k.substring(2).trim();
+			if (k.startsWith("b:")) {
+				if (!rest.isEmpty()) return Component.translatableWithFallback("boss.ultracraft." + rest, rest);
+			} else if (!rest.isEmpty()) {
+				// t:<EnemyType> and s:<SpawnableName>; sandbox names can contain spaces.
+				String type = rest.replace(' ', '_');
+				return Component.translatableWithFallback("entity.ultracraft.uk_enemy." + type.toLowerCase(java.util.Locale.ROOT), rest);
+			}
+		}
+		return super.getName();
+	}
+
 	public String ownerId() {
 		return entityData.get(OWNER);
 	}
@@ -90,6 +125,30 @@ public class UkEnemyEntity extends PathfinderMob implements Enemy {
 
 	public boolean isDying() {
 		return entityData.get(DEAD);
+	}
+
+	/**
+	 * ULTRAKILL's own current and max health for this enemy, as its owner's UKE reported them. The stand-in itself
+	 * never loses health (hurtServer only forwards), so the synced UK_HP is the single source getHealth() reports,
+	 * on the project's UK-to-MC scale of {@link #UK_TO_MC}. The max goes into the MAX_HEALTH attribute — Minecraft
+	 * syncs that to tracking clients itself and final getMaxHealth() reads it, so Jade shows "current / max" with a
+	 * real denominator instead of the registered 1024 container.
+	 */
+	public void setUkHealth(float hp, float max) {
+		if (hp >= 0f) entityData.set(UK_HP, hp);
+		if (level().isClientSide()) return;
+		float mcMax = (max > 0f ? max : hp) * UK_TO_MC;
+		if (mcMax >= 1f) { // the attribute's floor is 1: below that the base value is silently clamped anyway
+			var attr = getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
+			if (attr != null && Math.abs((float) attr.getBaseValue() - mcMax) > 0.01f) attr.setBaseValue(mcMax);
+		}
+	}
+
+	@Override
+	public float getHealth() {
+		float hp = entityData.get(UK_HP);
+		// not reported (old UKE format): fall back to Minecraft's own (never-damaged) health
+		return hp >= 0f ? hp * UK_TO_MC : super.getHealth();
 	}
 
 	/** Its owner's ULTRAKILL says it died: the puppets die too, then the stand-in goes. */
@@ -130,6 +189,7 @@ public class UkEnemyEntity extends PathfinderMob implements Enemy {
 		if (source.is(DamageTypeTags.BYPASSES_INVULNERABILITY)) return super.hurtServer(level, source, amount);
 		Entity attacker = source.getEntity();
 		boolean fire = source.is(DamageTypeTags.IS_FIRE);
+		boolean boom = source.is(DamageTypeTags.IS_EXPLOSION);
 		boolean world = fire || source.is(DamageTypeTags.IS_LIGHTNING) || source.is(DamageTypes.CACTUS) || source.is(DamageTypes.SWEET_BERRY_BUSH);
 		if (attacker == null && !world && !source.is(DamageTypeTags.IS_EXPLOSION)) return false;
 		// ULTRAKILL's enemies hurting each other happens inside ULTRAKILL
@@ -147,7 +207,13 @@ public class UkEnemyEntity extends PathfinderMob implements Enemy {
 		String by = attacker == null ? "-1" : UcNet.isV1(attacker) ? (attacker.getUUID().equals(owner) ? "V1" : "V1:" + attacker.getId()) : Integer.toString(attacker.getId());
 		if (owner != null && level.getServer() != null) {
 			var sp = level.getServer().getPlayerList().getPlayer(owner);
-			if (sp != null) UcNet.send(sp, "EHURT " + ukId + " " + dealt + " " + by + (fire ? " fire" : ""));
+			if (sp != null) UcNet.send(sp, "EHURT " + ukId + " " + dealt + " " + by + (fire ? " fire" : " -") + (boom ? " boom" : ""));
+		}
+		// a blast is the one hit whose sender decides whether an Idol may die at all, so log who sent it: which
+		// entity, whether that was V1, and whether Minecraft called it an explosion
+		if (boom) {
+			org.slf4j.LoggerFactory.getLogger("ultracraft").info("[EHURT-send] boom ukId={} dealt={} attacker={} by={} fire={} self={}",
+				ukId, dealt, attacker == null ? "null" : attacker.getType() + "#" + attacker.getId(), by, fire, getType());
 		}
 		return true;
 	}

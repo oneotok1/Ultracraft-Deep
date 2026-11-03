@@ -62,15 +62,15 @@ final class UcCheats {
 		if (!allowed()) c.header("Cheats need operator permission on this server.");
 		c.header("ULTRAKILL's cheats");
 		c.add(options(ULTRAKILL));
-		Button kill = Button.builder(Component.literal("Kill All ULTRAKILL Enemies"), b -> UkLink.send("CHEAT ultrakill.kill-all-enemies 1"))
-			.tooltip(Tooltip.create(Component.literal("ULTRAKILL's enemies around V1 die (Minecraft's monsters don't)."))).build();
+		Button kill = Button.builder(Component.translatable("Kill All ULTRAKILL Enemies"), b -> UkLink.send("CHEAT ultrakill.kill-all-enemies 1"))
+			.tooltip(Tooltip.create(Component.translatable("ULTRAKILL's enemies around V1 die (Minecraft's monsters don't)."))).build();
 		kill.active = allowed();
 		c.add(kill, null);
 		c.header("Ultracraft's cheats");
 		c.add(options(ULTRACRAFT));
 		c.header("Bosses");
-		Button setup = Button.builder(Component.literal("Boss Setup..."), b -> Minecraft.getInstance().setScreen(new UcBossSetupScreen(c.self())))
-			.tooltip(Tooltip.create(Component.literal("Each boss as you want it (every one set apart, both Gabriels and both V2s too): its phase, health, speed, damage and traits, whether it comes on its own, practice fights, and a Fight Now button."))).build();
+		Button setup = Button.builder(Component.translatable("Boss Setup..."), b -> Minecraft.getInstance().setScreen(new UcBossSetupScreen(c.self())))
+			.tooltip(Tooltip.create(Component.translatable("Configure each boss independently (including separate V2 and Gabriel fights): phase, health, speed, damage, traits, rotation frequency, practice mode, and Fight Now."))).build();
 		c.add(setup, null);
 	}
 
@@ -78,7 +78,7 @@ final class UcCheats {
 		OptionInstance<?>[] out = new OptionInstance<?>[cheats.size()];
 		for (int i = 0; i < cheats.size(); i++) {
 			Cheat ch = cheats.get(i);
-			out[i] = OptionInstance.createBoolean(ch.name, OptionInstance.cachedConstantTooltip(Component.literal(ch.tooltip)), on(ch.id), v -> set(ch, v));
+			out[i] = OptionInstance.createBoolean(ch.name, OptionInstance.cachedConstantTooltip(Component.translatable(ch.tooltip)), on(ch.id), v -> set(ch, v));
 		}
 		return out;
 	}

@@ -53,7 +53,7 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 	static final Map<String, String> reported = new HashMap<>();
 
 	public UcSettingsScreen(Screen last) {
-		super(last, Minecraft.getInstance().options, Component.literal("Ultracraft Settings"));
+		super(last, Minecraft.getInstance().options, Component.translatable("Ultracraft Settings"));
 	}
 
 	/** The "Ultracraft" button on the pause menu, the title screen and Minecraft's Options. */
@@ -64,8 +64,8 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 				org.slf4j.LoggerFactory.getLogger("ultracraft").info("[disconnected] {}", screen.getNarrationMessage().getString());
 			}
 			if (screen instanceof PauseScreen || screen instanceof OptionsScreen || screen instanceof TitleScreen) {
-				Screens.getButtons(screen).add(Button.builder(Component.literal("Ultracraft..."), b -> mc.setScreen(new UcSettingsScreen(screen)))
-					.bounds(4, 4, 90, 20).tooltip(Tooltip.create(Component.literal("Ultracraft and ULTRAKILL settings"))).build());
+				Screens.getButtons(screen).add(Button.builder(Component.translatable("Ultracraft..."), b -> mc.setScreen(new UcSettingsScreen(screen)))
+					.bounds(4, 4, 90, 20).tooltip(Tooltip.create(Component.translatable("Ultracraft and ULTRAKILL settings"))).build());
 			}
 		});
 	}
@@ -87,8 +87,8 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 		list.addSmall(open("Music", "ULTRAKILL's music in fights: which song, boss themes, volumes.", UcSettingsScreen::music),
 			open("Cheats", "ULTRAKILL's Sandbox cheats and a few of Ultracraft's.", UcCheats::fill));
 		list.addSmall(open("ULTRAKILL Settings", "Sensitivity, field of view, screen shake... as Ultracraft plays it (ULTRAKILL's own settings stay as they are).",
-			UcSettingsScreen::ukSettings), Button.builder(Component.literal("ULTRAKILL Controls..."), b -> minecraft.setScreen(new UcKeybindsScreen(this)))
-			.tooltip(Tooltip.create(Component.literal("Rebind ULTRAKILL's keys."))).build());
+			UcSettingsScreen::ukSettings), Button.builder(Component.translatable("ULTRAKILL Controls..."), b -> minecraft.setScreen(new UcKeybindsScreen(this)))
+			.tooltip(Tooltip.create(Component.translatable("Rebind ULTRAKILL's keys."))).build());
 	}
 
 	/** Debug: a category's page by its short name. */
@@ -107,8 +107,8 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 	}
 
 	private Button open(String name, String tooltip, Consumer<Category> fill) {
-		return Button.builder(Component.literal(name + "..."), b -> minecraft.setScreen(new Category(this, name, fill)))
-			.tooltip(Tooltip.create(Component.literal(tooltip))).build();
+		return Button.builder(Component.translatable(name + "..."), b -> minecraft.setScreen(new Category(this, name, fill)))
+			.tooltip(Tooltip.create(Component.translatable(tooltip))).build();
 	}
 
 	@Override
@@ -122,7 +122,7 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 		private final Consumer<Category> fill;
 
 		Category(Screen last, String name, Consumer<Category> fill) {
-			super(last, Minecraft.getInstance().options, Component.literal(name));
+			super(last, Minecraft.getInstance().options, Component.translatable(name));
 			this.fill = fill;
 		}
 
@@ -139,8 +139,12 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 			list.addSmall(a, b);
 		}
 
+		void add(AbstractWidget a) {
+			list.addSmall(java.util.List.of(a));
+		}
+
 		void header(String text) {
-			list.addHeader(Component.literal(text));
+			list.addHeader(Component.translatable(text));
 		}
 
 		Screen self() {
@@ -173,7 +177,7 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 			slider("Time Between Bosses", "About how many minutes of play pass between bosses.", 5, 60, UltracraftConfig.bossMinutes, v -> v + " min",
 				v -> UltracraftConfig.bossMinutes = v),
 			slider("Boss Difficulty", "How hard bosses are. Auto: they get harder the more of them V1 has beaten.", 0, 5, UltracraftConfig.bossDifficulty,
-				v -> v == 0 ? "Auto" : UkBosses.DIFFICULTY[v - 1], v -> UltracraftConfig.bossDifficulty = v),
+				v -> UkBosses.difficultyKey(v - 1), v -> UltracraftConfig.bossDifficulty = v),
 			slider("Trait Chance", "How often a boss comes with traits (modifiers such as Radiant or Volatile); about a quarter of those bring two.", 0, 100,
 				UltracraftConfig.traitChance, v -> v + "%", v -> UltracraftConfig.traitChance = v),
 			slider("Boss Intros", "A boss makes its entrance as ULTRAKILL brings it in (V2 drops in and bows, Gabriel appears in a pillar of light, the Primes speak), with ULTRAKILL's title card. It can't be hurt and doesn't attack until it's done. Short: a few seconds. Full: everything ULTRAKILL has it say first (Minos and Sisyphus Prime's whole speeches).",
@@ -184,30 +188,27 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 				UltracraftConfig.bossArenas, v -> UltracraftConfig.bossArenas = v),
 			bool("Cyber Grind Arenas", "Starting the Cyber Grind at a shop takes you into its arena as ULTRAKILL has it: a 16 x 16 grid of columns that shifts into a new pattern every wave. Its temporary shop takes you back. Off: the waves come round the shop you started it from.",
 				UltracraftConfig.grindArenas, v -> UltracraftConfig.grindArenas = v),
+			bool("Cyber Grind Void Death", "Falling off the Cyber Grind's arenas kills (V1, and its enemies, like one of ULTRAKILL's pits) instead of lifting everyone back onto the grid. A fall's revive marker goes to the arena's spawn, inside the Grind.",
+				UltracraftConfig.grindVoidDeath, v -> UltracraftConfig.grindVoidDeath = v),
 			bool("ULTRAKILL Arenas", "Arenas themed after ULTRAKILL's layers of Hell generate in new parts of the world, each with a boss waiting inside.",
 				UltracraftConfig.arenas, v -> UltracraftConfig.arenas = v),
-			bool("ULTRAKILL While Steve", "Back as Steve (F8), ULTRAKILL's enemies stay and keep fighting: you see them, and they come for Steve. Off: they wait, frozen, until you're V1 again.",
-				UltracraftConfig.steveEnemies, v -> UltracraftConfig.steveEnemies = v));
-		c.add(Button.builder(Component.literal("Mob Damage Filter..."), b -> Minecraft.getInstance().setScreen(new MobDamageScreen(c.self())))
+			bool("ULTRAKILL While Steve", "Back as Steve (%s), ULTRAKILL's enemies stay and keep fighting: you see them, and they come for Steve. Off: they wait, frozen, until you're V1 again.",
+				UltracraftConfig.steveEnemies, v -> UltracraftConfig.steveEnemies = v, Ultracraft.toggleKeyName()));
+		c.add(Button.builder(Component.translatable("Mob Damage Filter..."), b -> Minecraft.getInstance().setScreen(new MobDamageScreen(c.self())))
 			.width(150)
-			.tooltip(Tooltip.create(Component.literal("Which of Minecraft's mobs ULTRAKILL's side may touch at all, group by group and mob by mob.")))
-			.build(), Button.builder(Component.literal("Every Mob Allowed"), b -> {
-				UltracraftConfig.dmgMobs.clear();
-				UltracraftConfig.dmgHostile = true;
-				UltracraftConfig.dmgNeutral = true;
-				UltracraftConfig.dmgPassive = true;
-				UltracraftConfig.dmgOther = true;
-			}).width(150).tooltip(Tooltip.create(Component.literal("Back to every mob of every group, forgetting each mob's own setting."))).build());
+			.tooltip(Tooltip.create(Component.translatable("Configure which Minecraft mobs can be targeted, damaged, or grabbed by ULTRAKILL, by category or per mob.")))
+			.build());
 	}
 
 	private static void gameplay(Category c) {
-		c.add(bool("Become V1 Automatically", "Become V1 as soon as ULTRAKILL is ready (otherwise F8).", UltracraftConfig.autoV1, v -> UltracraftConfig.autoV1 = v),
+		c.add(bool("Become V1 Automatically", "Become V1 as soon as ULTRAKILL is ready (otherwise %s).", UltracraftConfig.autoV1, v -> UltracraftConfig.autoV1 = v, Ultracraft.toggleKeyName()),
 			bool("V1 Breaks Blocks", "V1's guns, punches, slams and blasts break blocks.", UltracraftConfig.playerBlockDamage, v -> UltracraftConfig.playerBlockDamage = v),
 			bool("Enemies Break Blocks", "ULTRAKILL's enemies' shots, beams, blasts and fire break blocks.", UltracraftConfig.enemyBlockDamage,
 				v -> UltracraftConfig.enemyBlockDamage = v),
-			bool("Blasts Put Fire Out", "V1's explosions put out the fire around them: the flames they land in, and the ones they would start (the mini nuke stops setting its crater alight). Fire is a block, but the two above never reach it, so this works with them off.",
+			bool("V1's Red Explosions Hit as Melee", "V1's red explosions count as feedbacker (Previous version behavior)", UltracraftConfig.nukesHitAsMelee, v -> UltracraftConfig.nukesHitAsMelee = v),
+			bool("Blasts Put Fire Out", "V1's explosions extinguish flames: fires within blast radius are put out, and craters are no longer ignited (e.g. mini nuke fire). Works even with block damage disabled.",
 				UltracraftConfig.blastFireOut, v -> UltracraftConfig.blastFireOut = v),
-			bool("Extra Blood Counts as Health Cap", "V1's absorption hearts (the yellow ones) count as the top of his health bar: the bar and its number include them, and healing past his own maximum fills them back up, so the blood he drinks puts them back. Off: they are only a shield - damage eats them first, healing never refills them, and V1's own maximum is the top of the bar. ULTRAKILL's own hits and Minecraft's are both soaked either way.",
+			bool("Extra Blood Counts as Health Cap", "Absorption hearts (golden apples and potions) expand V1's maximum health: the health bar and readout extend to include them, and fresh blood refills them back to the boosted cap. Off: absorption acts as a temporary shield that absorbs damage first but cannot be refilled by blood.",
 				UltracraftConfig.absorbCeiling, v -> UltracraftConfig.absorbCeiling = v),
 			slider("Impact Frames", "How long ULTRAKILL's impact frames (the freeze on big hits) last: 0.1x to 3x.", 1, 30, Math.round(UltracraftConfig.impactFrames * 10f),
 				v -> String.format(Locale.ROOT, "%.1fx", v / 10f), v -> UltracraftConfig.impactFrames = v / 10f),
@@ -220,7 +221,7 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 	private static void shop(Category c) {
 		c.add(bool("Style Rewards", "Kills at ULTRAKILL's top style ranks (S and up) pay extra experience and loot, and a streak of them pays more: diamonds and golden apples at SSS, netherite at ULTRAKILL.",
 				UltracraftConfig.styleRewards, v -> UltracraftConfig.styleRewards = v),
-			slider("Style Streak Text", "The streak's number over the crosshair each kill at S and up, and the big one across the screen at every fifth. Off hides both; the experience and loot are unaffected.",
+			slider("Style Streak Text", "Display the style streak counter above the hotbar on S+ kills, and a screen-wide title at every 5th kill. Off hides the text without affecting experience or loot.",
 				0, 2, UltracraftConfig.styleStreakTitle ? 2 : UltracraftConfig.styleStreakText ? 1 : 0, v -> STREAK_NAMES[v], v -> {
 					UltracraftConfig.styleStreakText = v > 0;
 					UltracraftConfig.styleStreakTitle = v > 1;
@@ -235,10 +236,10 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 	}
 
 	private static void performance(Category c) {
-		c.add(Button.builder(Component.literal("Low-End PC Preset"), b -> preset(c, UltracraftConfig::lowEndPreset))
-				.tooltip(Tooltip.create(Component.literal("Everything on this page at its cheapest that still plays well: 480p, Low effects, 1,500 blood stains, no extra gore, 64 blocks of terrain, Low-Latency Frames off. Each can still be changed below."))).build(),
-			Button.builder(Component.literal("Reset to Defaults"), b -> preset(c, UltracraftConfig::performanceDefaults))
-				.tooltip(Tooltip.create(Component.literal("Everything on this page back as it came: 720p, frame rate matching Minecraft, High effects, all blood stains, extra gore, 128 blocks of terrain."))).build());
+		c.add(Button.builder(Component.translatable("Low-End PC Preset"), b -> preset(c, UltracraftConfig::lowEndPreset))
+				.tooltip(Tooltip.create(Component.translatable("Everything on this page at its cheapest that still plays well: 480p, Low effects, 1,500 blood stains, no extra gore, 64 blocks of terrain, Low-Latency Frames off. Each can still be changed below."))).build(),
+			Button.builder(Component.translatable("Reset to Defaults"), b -> preset(c, UltracraftConfig::performanceDefaults))
+				.tooltip(Tooltip.create(Component.translatable("Everything on this page back as it came: 720p, frame rate matching Minecraft, High effects, all blood stains, extra gore, 128 blocks of terrain."))).build());
 		c.add(slider("ULTRAKILL Resolution", "How tall ULTRAKILL draws its picture (scaled up to fill the window). Lower = much faster; this is the biggest frame rate setting.",
 				0, 6, resIndex(), v -> RES_NAMES[v], v -> UltracraftConfig.v1Height = RES[v]),
 			slider("ULTRAKILL FPS Cap", "How many frames a second ULTRAKILL draws. Match Minecraft (the far left) keeps it in step with Minecraft's own frame limit, the smoothest. It shares the graphics card with Minecraft: a lower cap leaves Minecraft more.",
@@ -283,11 +284,11 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 	}
 
 	private static void music(Category c) {
-		c.add(Button.builder(Component.literal("Fight Music: " + UcMusicScreen.current()), b -> Minecraft.getInstance().setScreen(new UcMusicScreen(c.self())))
-				.tooltip(Tooltip.create(Component.literal("Which ULTRAKILL song plays in fights: off, a random one each fight, or one from its soundtrack."))).build(),
+		c.add(Button.builder(Component.translatable("Fight Music: %s", UcMusicScreen.current()), b -> Minecraft.getInstance().setScreen(new UcMusicScreen(c.self())))
+				.tooltip(Tooltip.create(Component.translatable("Which ULTRAKILL song plays in fights: off, a random one each fight, or one from its soundtrack."))).build(),
 			null);
-		c.add(Button.builder(Component.literal("Boss Music & Intros..."), b -> Minecraft.getInstance().setScreen(new UcBossMusicScreen(c.self())))
-				.tooltip(Tooltip.create(Component.literal("Each boss's song: (Default) is its own ULTRAKILL theme (V2: Versus, Minos Prime: Order, Sisyphus Prime: War...), any song of ULTRAKILL's, or one of your own (Your Music). And which entrance it makes, for the bosses that have more than one."))).build(),
+		c.add(Button.builder(Component.translatable("Boss Music & Intros..."), b -> Minecraft.getInstance().setScreen(new UcBossMusicScreen(c.self())))
+				.tooltip(Tooltip.create(Component.translatable("Each boss's song: (Default) is its own ULTRAKILL theme (V2: Versus, Minos Prime: Order, Sisyphus Prime: War...), any song of ULTRAKILL's, or one of your own (Your Music). And which entrance it makes, for the bosses that have more than one."))).build(),
 			null);
 		c.add(bool("Boss Themes", "Bosses and arenas bring their own ULTRAKILL song (Boss Music...). Off: the Fight Music plays for them too.",
 				UltracraftConfig.bossThemes, v -> UltracraftConfig.bossThemes = v),
@@ -328,8 +329,8 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 		});
 	}
 
-	static OptionInstance<Boolean> bool(String caption, String tooltip, boolean value, Consumer<Boolean> set) {
-		return OptionInstance.createBoolean(caption, OptionInstance.cachedConstantTooltip(Component.literal(tooltip)), value, v -> {
+	static OptionInstance<Boolean> bool(String caption, String tooltip, boolean value, Consumer<Boolean> set, Object... args) {
+		return OptionInstance.createBoolean(caption, OptionInstance.cachedConstantTooltip(Component.translatable(tooltip, args)), value, v -> {
 			set.accept(v);
 			UltracraftConfig.sendOpts();
 		});
@@ -337,8 +338,16 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 
 	static OptionInstance<Integer> slider(String caption, String tooltip, int min, int max, int value, java.util.function.IntFunction<String> label,
 			Consumer<Integer> set) {
-		return new OptionInstance<>(caption, OptionInstance.cachedConstantTooltip(Component.literal(tooltip)),
-			(cap, v) -> Options.genericValueLabel(cap, Component.literal(label.apply(v))), new OptionInstance.IntRange(min, max), Math.max(min, Math.min(max, value)), v -> {
+		return slider(caption, tooltip, "", min, max, value, label, set);
+	}
+
+	/** tail: an extra sentence appended to the tooltip (the ULTRAKILL's-own-settings note), also looked up. */
+	static OptionInstance<Integer> slider(String caption, String tooltip, String tail, int min, int max, int value,
+			java.util.function.IntFunction<String> label, Consumer<Integer> set) {
+		net.minecraft.network.chat.MutableComponent tip = Component.translatable(tooltip);
+		if (!tail.isEmpty()) tip = tip.append(Component.translatable(tail));
+		return new OptionInstance<>(caption, OptionInstance.cachedConstantTooltip(tip),
+			(cap, v) -> Options.genericValueLabel(cap, Component.translatable(label.apply(v))), new OptionInstance.IntRange(min, max), Math.max(min, Math.min(max, value)), v -> {
 				set.accept(v);
 				UltracraftConfig.sendOpts();
 			});
@@ -362,7 +371,7 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 	private static OptionInstance<?> ukOption(UkPref p) {
 		String now = current(p);
 		if (p.type == 'b') {
-			return OptionInstance.createBoolean(p.caption, OptionInstance.cachedConstantTooltip(Component.literal(p.tooltip + " (ULTRAKILL's own settings stay as they are.)")),
+			return OptionInstance.createBoolean(p.caption, OptionInstance.cachedConstantTooltip(Component.translatable(p.tooltip).append(Component.translatable(" (ULTRAKILL's own settings stay as they are.)"))),
 				Boolean.parseBoolean(now), v -> setUk(p, Boolean.toString(v)));
 		}
 		// fractions (screen shake, volumes) show as percentages
@@ -377,7 +386,7 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 		java.util.function.IntFunction<String> label = p.key.equals("weaponHoldPosition") ? v -> v == 0 ? "Right" : v == 1 ? "Middle" : "Left"
 			: p.key.equals("difficulty") ? v -> UK_DIFFICULTY[Math.max(0, Math.min(4, v))]
 			: percent ? v -> v + "%" : Integer::toString;
-		return slider(p.caption, p.tooltip + " (ULTRAKILL's own settings stay as they are.)", p.min, p.max, value, label,
+		return slider(p.caption, p.tooltip, " (ULTRAKILL's own settings stay as they are.)", p.min, p.max, value, label,
 			v -> setUk(p, p.type == 'i' ? Integer.toString(v) : percent ? String.format(Locale.ROOT, "%.2f", v / 100f) : String.format(Locale.ROOT, "%.1f", (float) v)));
 	}
 }

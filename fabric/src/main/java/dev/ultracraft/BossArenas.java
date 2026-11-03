@@ -120,7 +120,7 @@ final class BossArenas {
 		leaveIn = STAY_AFTER_WIN;
 		for (UUID id : party.keySet()) {
 			ServerPlayer o = server.getPlayerList().getPlayer(id);
-			if (o != null) o.sendSystemMessage(Component.literal("[Ultracraft] Back in " + STAY_AFTER_WIN / 20 + " seconds: grab the loot.").withStyle(ChatFormatting.GOLD));
+			if (o != null) o.sendSystemMessage(Component.translatable("[Ultracraft] Back in %s seconds: grab the loot.", STAY_AFTER_WIN / 20).withStyle(ChatFormatting.GOLD));
 		}
 	}
 
@@ -132,7 +132,7 @@ final class BossArenas {
 		if (leaveIn % 20 == 0 && leaveIn > 0 && server != null) {
 			for (UUID id : party.keySet()) {
 				ServerPlayer o = server.getPlayerList().getPlayer(id);
-				if (o != null) o.displayClientMessage(Component.literal("Leaving the arena in " + leaveIn / 20 + "...").withStyle(leaveIn <= 100 ? ChatFormatting.RED : ChatFormatting.GOLD), true);
+				if (o != null) o.displayClientMessage(Component.translatable("Leaving the arena in %s...", leaveIn / 20).withStyle(leaveIn <= 100 ? ChatFormatting.RED : ChatFormatting.GOLD), true);
 			}
 		}
 		if (leaveIn == 0) leaveAll();
@@ -153,7 +153,7 @@ final class BossArenas {
 			o.setDeltaMovement(Vec3.ZERO);
 			o.fallDistance = 0;
 			o.hurtMarked = true;
-			o.displayClientMessage(Component.literal("OUT OF BOUNDS").withStyle(ChatFormatting.RED, ChatFormatting.BOLD), true);
+			o.displayClientMessage(Component.translatable("OUT OF BOUNDS").withStyle(ChatFormatting.RED, ChatFormatting.BOLD), true);
 		}
 	}
 

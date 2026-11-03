@@ -72,13 +72,13 @@ final class Duels {
 		String why = problem(from, to);
 		if (why != null) return why;
 		pending.put(to.getUUID(), new Challenge(from.getUUID(), from.level().getGameTime() + CHALLENGE_TICKS));
-		Component accept = Component.literal("[ACCEPT]").withStyle(s -> s.withColor(ChatFormatting.GREEN).withBold(true)
+		Component accept = Component.translatable("[ACCEPT]").withStyle(s -> s.withColor(ChatFormatting.GREEN).withBold(true)
 			.withClickEvent(new ClickEvent.RunCommand("/uc duel accept"))
-			.withHoverEvent(new HoverEvent.ShowText(Component.literal("Fight " + from.getName().getString()))));
-		Component decline = Component.literal("[DECLINE]").withStyle(s -> s.withColor(ChatFormatting.GRAY)
+			.withHoverEvent(new HoverEvent.ShowText(Component.translatable("Fight %s", from.getName().getString()))));
+		Component decline = Component.translatable("[DECLINE]").withStyle(s -> s.withColor(ChatFormatting.GRAY)
 			.withClickEvent(new ClickEvent.RunCommand("/uc duel decline")));
-		to.sendSystemMessage(Component.literal("[Ultracraft] ").withStyle(ChatFormatting.RED)
-			.append(Component.literal(from.getName().getString() + " challenges you to a duel!  ").withStyle(ChatFormatting.WHITE))
+		to.sendSystemMessage(Component.translatable("[Ultracraft] ").withStyle(ChatFormatting.RED)
+			.append(Component.translatable("%s challenges you to a duel!  ", from.getName().getString()).withStyle(ChatFormatting.WHITE))
 			.append(accept).append(Component.literal(" ")).append(decline));
 		UcNet.send(to, "HUD <color=red>" + from.getName().getString() + "</color> challenges you to a duel: accept in chat.");
 		return null;
@@ -91,7 +91,7 @@ final class Duels {
 		ServerPlayer from = c == null ? null : server.getPlayerList().getPlayer(c.from());
 		if (c == null || from == null || to.level().getGameTime() > c.until()) return "Nobody has challenged you (or the challenge ran out).";
 		if (!yes) {
-			from.sendSystemMessage(Component.literal("[Ultracraft] " + to.getName().getString() + " declined the duel.").withStyle(ChatFormatting.GRAY));
+			from.sendSystemMessage(Component.translatable("[Ultracraft] %s declined the duel.", to.getName().getString()).withStyle(ChatFormatting.GRAY));
 			return null;
 		}
 		String why = problem(from, to);
@@ -107,7 +107,7 @@ final class Duels {
 			UcNet.send(p, "C:DUEL " + other.getId());
 		}
 		for (ServerPlayer o : server.getPlayerList().getPlayers()) {
-			o.sendSystemMessage(Component.literal("[Ultracraft] DUEL: " + from.getName().getString() + " vs " + to.getName().getString()).withStyle(ChatFormatting.GOLD));
+			o.sendSystemMessage(Component.translatable("[Ultracraft] DUEL: %s vs %s", from.getName().getString(), to.getName().getString()).withStyle(ChatFormatting.GOLD));
 		}
 		return null;
 	}
@@ -148,13 +148,13 @@ final class Duels {
 				for (ServerPlayer p : List.of(a, b)) {
 					ServerPlayer other = p == a ? b : a;
 					title(p, Component.literal(Integer.toString(n)).withStyle(ChatFormatting.RED, ChatFormatting.BOLD),
-						Component.literal("DUEL vs " + other.getName().getString()).withStyle(ChatFormatting.GRAY));
+						Component.translatable("DUEL vs %s", other.getName().getString()).withStyle(ChatFormatting.GRAY));
 					p.level().playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.NOTE_BLOCK_BASEDRUM.value(), SoundSource.PLAYERS, 2f, 0.6f);
 				}
 			}
 			if (--d.countdown == 0) {
 				for (ServerPlayer p : List.of(a, b)) {
-					title(p, Component.literal("FIGHT").withStyle(ChatFormatting.RED, ChatFormatting.BOLD), Component.empty());
+					title(p, Component.translatable("FIGHT").withStyle(ChatFormatting.RED, ChatFormatting.BOLD), Component.empty());
 					p.level().playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.RAID_HORN.value(), SoundSource.PLAYERS, 1.5f, 1.2f);
 				}
 			}
@@ -194,7 +194,7 @@ final class Duels {
 			p.setHealth(p.getMaxHealth());
 			p.fallDistance = 0;
 			boolean won = winner != null && winner.getUUID().equals(id);
-			String sub = why != null ? why : won ? "you won the duel" : winner != null ? winner.getName().getString() + " won the duel" : "";
+			String sub = why != null ? why : won ? "you won the duel" : winner != null ? winner.getName().getString() + " " + Component.translatable("won the duel").getString() : "";
 			title(p, Component.literal(won ? "VICTORY" : winner == null ? "NO CONTEST" : "DEFEAT").withStyle(won ? ChatFormatting.GOLD : ChatFormatting.RED, ChatFormatting.BOLD),
 				Component.literal(sub).withStyle(ChatFormatting.GRAY));
 			if (won) {
@@ -206,7 +206,7 @@ final class Duels {
 		String names = (a != null ? a.getName().getString() : "?") + " vs " + (b != null ? b.getName().getString() : "?");
 		String result = winner != null ? winner.getName().getString() + " won" : "no winner";
 		for (ServerPlayer o : server.getPlayerList().getPlayers()) {
-			o.sendSystemMessage(Component.literal(String.format(Locale.ROOT, "[Ultracraft] DUEL %s: %s%s", names, result, why != null ? " (" + why + ")" : ""))
+			o.sendSystemMessage(Component.translatable("[Ultracraft] DUEL %s: %s%s", names, result, why != null ? " (" + why + ")" : "")
 				.withStyle(ChatFormatting.GOLD));
 		}
 	}

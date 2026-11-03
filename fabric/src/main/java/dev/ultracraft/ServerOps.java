@@ -85,6 +85,12 @@ public final class ServerOps {
 		for (BlockPos p : BlockPos.betweenClosed(center.offset(-r, -r, -r), center.offset(r, r, r))) {
 			if (level.getBlockState(p).is(BlockTags.FIRE)) level.removeBlock(p, false);
 		}
+		// Whoever the blast reached stops burning too: a block of fire can be put out, but an entity on fire cannot.
+		double reach = r + 1.0;
+		for (Entity e : level.getEntities((Entity) null, new net.minecraft.world.phys.AABB(x - reach, y - reach, z - reach, x + reach, y + reach, z + reach))) {
+			if (e.isSpectator() || !(e instanceof LivingEntity le)) continue;
+			if (le.getRemainingFireTicks() > 0) le.clearFire();
+		}
 	}
 
 	static State state(ServerPlayer sp) {
@@ -581,7 +587,7 @@ public final class ServerOps {
 			case "GEARADD" -> {
 				String gear = rest.trim();
 				UkProgress.get(sp).addGear(gear);
-				sp.sendSystemMessage(Component.literal("[Ultracraft] Bought: " + GearNames.of(gear)).withStyle(net.minecraft.ChatFormatting.GOLD));
+				sp.sendSystemMessage(Component.translatable("[Ultracraft] Bought: %s", GearNames.of(gear)).withStyle(net.minecraft.ChatFormatting.GOLD));
 			}
 			case "EQUIP" -> {
 				if (a.length >= 3) UkProgress.get(sp).setEquip(a[1], Integer.parseInt(a[2].trim()));
@@ -592,8 +598,7 @@ public final class ServerOps {
 				UkProgress p = UkProgress.get(sp);
 				boolean free = a.length > 2 && a[2].equals("free") && state(sp).infiniteP && cheatsAllowed(sp);
 				if (p.buyUpgrade(key, free)) {
-					sp.sendSystemMessage(Component.literal("[Ultracraft] " + UkUpgrades.name(key) + " upgraded to level " + p.level(key) + " of "
-						+ UkUpgrades.TRACKS.get(key).max() + ".").withStyle(net.minecraft.ChatFormatting.GOLD));
+					sp.sendSystemMessage(Component.translatable("[Ultracraft] %s upgraded to level %s of %s.", UkUpgrades.name(key), p.level(key), UkUpgrades.TRACKS.get(key).max()).withStyle(net.minecraft.ChatFormatting.GOLD));
 				}
 				p.sendMoney();
 				p.sendUpgrades();
@@ -619,7 +624,7 @@ public final class ServerOps {
 				UltracraftConfig.ukSpawns = rest.trim().equals("1");
 				UltracraftConfig.save();
 				CyberGrind.sendStateAll(server);
-				sp.displayClientMessage(Component.literal(UltracraftConfig.ukSpawns ? "ULTRAKILL's enemies spawn in the dark again" : "ULTRAKILL's enemies no longer spawn in the dark"), true);
+				sp.displayClientMessage(Component.translatable(UltracraftConfig.ukSpawns ? "ULTRAKILL's enemies spawn in the dark again" : "ULTRAKILL's enemies no longer spawn in the dark"), true);
 			}
 			case "UKDEAD" -> {
 				// UKDEAD type x y z rank grind [credit]: one of this player's ULTRAKILL's enemies died: its experience

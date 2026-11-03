@@ -87,7 +87,7 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 	private int waiting = -1;
 
 	public UcKeybindsScreen(Screen last) {
-		super(last, Minecraft.getInstance().options, Component.literal("ULTRAKILL Controls"));
+		super(last, Minecraft.getInstance().options, Component.translatable("ULTRAKILL Controls"));
 	}
 
 	/** Minecraft's names ("key.keyboard.t", "key.mouse.left") of the keys rebound to ULTRAKILL. */
@@ -128,7 +128,7 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 			buttons.add(b);
 			row.add(b);
 		}
-		row.add(Button.builder(Component.literal("Reset All"), btn -> {
+		row.add(Button.builder(Component.translatable("Reset All"), btn -> {
 			UltracraftConfig.ukBinds.clear();
 			for (Bind bind : BINDS) if (!isGun(bind.action)) UkLink.send("UKBIND " + bind.action + " -");
 			waiting = -1;
@@ -139,9 +139,9 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 
 	private Component label(int i) {
 		Bind b = BINDS.get(i);
-		if (i == waiting) return Component.literal(b.label + ": > press a key <").withStyle(ChatFormatting.YELLOW);
+		if (i == waiting) return Component.translatable(b.label).copy().append(": > press a key <").withStyle(ChatFormatting.YELLOW);
 		int k = key(b);
-		var c = Component.literal(b.label + ": ").append(keyName(k));
+		var c = Component.translatable(b.label).copy().append(": ").append(keyName(k));
 		return k != b.def ? c.withStyle(ChatFormatting.GOLD) : c;
 	}
 

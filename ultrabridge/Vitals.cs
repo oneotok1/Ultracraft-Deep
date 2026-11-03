@@ -1,7 +1,7 @@
 // UltraBridge, part eight: Steve's health, the way ULTRAKILL has to see it. Two Minecraft effects move V1's health
 // pool around: a Health Boost effect raises Steve's maximum (12 rows of hearts is 240 health), and absorption hearts
 // (the yellow ones) soak damage before his real health. Both are scaled by one rule: V1's maximum is
-// E = U * M / 20, capped at 500, where M is Steve's maximum and U is V1's own full health (100, or 200 on Harmless).
+// E = U * M / 20, capped at 4 * U, where M is Steve's maximum and U is V1's own full health (100, or 200 on Harmless).
 // At Steve's usual 20 that is 100, which is what the mod has always done. Minecraft sends both as absolute values
 // (MC_MAX, ABSORB) rather than deltas, so a missed message costs a tick instead of drifting out of step for good.
 //
@@ -28,8 +28,6 @@ namespace UltraBridge
         /// <summary>Steve's absorption hearts, in Minecraft health points.</summary>
         internal static int AbsorbMc;
 
-        const int HighestMax = 500;
-
         /// <summary>Extra Blood Counts as Health Cap: the absorption hearts are the top of V1's health bar rather than
         /// a thing beside it - healing past his own maximum fills them back up, and the bar counts them.</summary>
         internal static bool PoolCeiling = true;
@@ -49,6 +47,10 @@ namespace UltraBridge
         static int pushedMc = -1;
         static float pushedAt;
 
+        /// <summary>The most absorption the server itself gave Steve (a golden apple, a potion): the ceiling Fill
+        /// refills to, so blood can put spent hearts back but never conjure more than the item granted.</summary>
+        static int grantedMc;
+
         /// <summary>Steve's absorption hearts, in ULTRAKILL health (the HUD draws this many).</summary>
         internal static float AbsorbHp => McMax <= 0 ? 0f : AbsorbMc * (float)UkMax / McMax;
 
@@ -58,8 +60,19 @@ namespace UltraBridge
         /// <inheritdoc cref="MaxHpNowInt"/>
         internal static float MaxHpNowFloat() => UkMax;
 
-        /// <summary>V1's maximum for a level on this difficulty, with Steve's maximum where it is.</summary>
-        static int ScaledMax(NewMovement nm, int mc) => Mathf.Clamp(MaxHp(nm) * Mathf.Max(1, mc) / 20, 1, HighestMax);
+        /// <summary>V1's ceiling: four times his own full health on this difficulty, however far a Health Boost
+        /// pushes Steve's bar. Harmless doubles the whole scale (200 instead of 100, and every absorption heart with
+        /// it), so its ceiling doubles as well: 400 on the usual 100, 800 on Harmless's 200 - still three digits, which
+        /// is all the HUD's "/N" readout has room for.</summary>
+        static int HighestMax(NewMovement nm) => MaxHp(nm) * 4;
+
+        /// <summary>V1's maximum: his own full health, times Steve's maximum over the usual 20, and never more than
+        /// four times his own. Without a Health Boost that is exactly his own full health (100, or 200 on Harmless);
+        /// a Health Boost moves it up with Steve's bar and stops at the fourfold ceiling. It is his real health bar
+        /// rather than absorption hearts, so Minecraft's own regeneration fills it the way it fills any other bar -
+        /// it used to sit at his own maximum and stop there, which left Minecraft full and still paying food for
+        /// health it could not deliver.</summary>
+        static int ScaledMax(NewMovement nm, int mc) => Mathf.Clamp(MaxHp(nm) * Mathf.Max(1, mc) / 20, 1, HighestMax(nm));
 
         /// <summary>Resizes V1 when Steve's maximum (or the difficulty behind it) moved. Safe to call every frame.</summary>
         internal static void SyncMax(NewMovement nm)
@@ -106,6 +119,9 @@ namespace UltraBridge
                     // counts; the number it sends back right after a spend of ours is our own, a frame late
                     if (!int.TryParse(rest.Trim(), out int absorb)) break;
                     absorb = Mathf.Max(0, absorb);
+                    // a fresh grant from the server (an apple, a potion): it lifted what Steve may hold, so blood
+                    // may refill up to this much; our own spends only shrink, never raise, what was granted
+                    if (absorb > AbsorbMc && absorb != pushedMc) grantedMc = absorb;
                     if (absorb == AbsorbMc) break;
                     if (absorb == pushedMc && Time.unscaledTime - pushedAt < 0.5f) break;
                     AbsorbMc = absorb;
@@ -195,11 +211,15 @@ namespace UltraBridge
             int over = nm.hp - UkMax;
             if (over <= 0) return;
             nm.hp = UkMax;
-            Spend(AbsorbMc + Mathf.Max(1, Mathf.RoundToInt(over * (float)McMax / UkMax)));
+            // refill only the hearts the server actually granted: blood puts spent ones back, it never adds new
+            // ones, so the cap stays what the item gave (a golden apple's 80, say) instead of growing with every heal
+            int room = Mathf.Max(0, grantedMc - AbsorbMc);
+            Spend(AbsorbMc + Mathf.Min(room, Mathf.Max(1, Mathf.RoundToInt(over * (float)McMax / UkMax))));
         }
 
-        /// <summary>V1's healing cap: his own maximum, or the top of the pool when the pool counts as it.</summary>
-        internal static float HealCapFloat() => PoolCeiling ? UkMax + Mathf.RoundToInt(AbsorbHp) : UkMax;
+        /// <summary>V1's healing cap: his own maximum plus the granted pool when the pool counts as it (blood refills
+        /// the granted hearts but cannot grow them, so the cap is what the server's apple or potion gave).</summary>
+        internal static float HealCapFloat() => PoolCeiling ? UkMax + Mathf.Min(AbsorbHp, grantedMc * (float)UkMax / McMax) : UkMax;
 
         /// <summary>Hands V1 a hit Minecraft has already worked out, absorption hearts and all.</summary>
         internal static void McHurt(NewMovement nm, int damage)

@@ -33,7 +33,7 @@ final class UcBossMusicScreen extends OptionsSubScreen {
 			"Quick: he falls out of the sky as he breaks free: \"This prison... To hold ME?\"")));
 
 	UcBossMusicScreen(Screen last) {
-		super(last, Minecraft.getInstance().options, Component.literal("Boss Music & Intros"));
+		super(last, Minecraft.getInstance().options, Component.translatable("Boss Music & Intros"));
 	}
 
 	/** Its entrance's name ("Rematch"), or null for its own. */
@@ -59,9 +59,13 @@ final class UcBossMusicScreen extends OptionsSubScreen {
 		List<AbstractWidget> row = new ArrayList<>();
 		for (UkBosses.Boss b : UkBosses.ROSTER) {
 			String intro = introLabel(b.key());
-			Button btn = Button.builder(Component.literal(b.name() + ": " + label(b.key()) + (intro != null ? " | " + intro : "")), x -> minecraft.setScreen(new Pick(this, b)))
-				.tooltip(Tooltip.create(Component.literal("The song that plays when " + b.name() + " comes. (Default): its own ULTRAKILL theme."
-					+ (ALTS.containsKey(b.key()) ? " It has more than one entrance, too." : "")))).build();
+			var title = UkBosses.bossName(b).copy().append(": ").append(label(b.key()));
+			if (intro != null) title = title.append(" | " + intro);
+			Component tip = Component.translatable("The song that plays when %s comes.", UkBosses.bossName(b));
+			if (ALTS.containsKey(b.key())) tip = tip.copy().append(" ").append(Component.translatable("It has more than one entrance, too."));
+			tip = tip.copy().append(" ").append(Component.translatable("(Default): its own ULTRAKILL theme."));
+			Button btn = Button.builder(title, x -> minecraft.setScreen(new Pick(this, b)))
+				.tooltip(Tooltip.create(tip)).build();
 			row.add(btn);
 		}
 		for (int i = 0; i < row.size(); i += 2) list.addSmall(row.get(i), i + 1 < row.size() ? row.get(i + 1) : null);
@@ -72,7 +76,7 @@ final class UcBossMusicScreen extends OptionsSubScreen {
 		private final UkBosses.Boss boss;
 
 		Pick(Screen last, UkBosses.Boss boss) {
-			super(last, Minecraft.getInstance().options, Component.literal(boss.name() + ": Music & Intro"));
+			super(last, Minecraft.getInstance().options, UkBosses.bossName(boss).copy().append(": ").append(Component.translatable("Music & Intro")));
 			this.boss = boss;
 		}
 
@@ -80,25 +84,25 @@ final class UcBossMusicScreen extends OptionsSubScreen {
 		protected void addOptions() {
 			List<Alt> alts = ALTS.get(boss.key());
 			if (alts != null) {
-				list.addHeader(Component.literal("Entrance"));
+				list.addHeader(Component.translatable("Entrance"));
 				List<AbstractWidget> row = new ArrayList<>();
 				String auto = UltracraftConfig.BOSS_INTRO_DEFAULTS.get(boss.key());
 				if (auto != null) {
 					String autoName = alts.stream().filter(a -> a.id().equals(auto)).map(Alt::name).findFirst().orElse(auto);
-					row.add(intro(null, "(Default) Auto", "Its own entrance the first time you meet it (until you've beaten it), then " + autoName + " in every rematch."));
-					row.add(intro("-", "Level Intro", "Always its own entrance, as ULTRAKILL has it (Boss Intros: Short or Full)."));
+					row.add(intro(null, "(Default) Auto", "Plays its standard entrance until first defeated, then switches to " + autoName + " on all rematches."));
+					row.add(intro("-", "Level Intro", "Always plays its standard level entrance (follows Boss Intros: Short or Full)."));
 				} else {
 					row.add(intro(null, "(Default)", "Its own entrance, as ULTRAKILL has it (Boss Intros: Short or Full)."));
 				}
 				for (Alt a : alts) row.add(intro(a.id(), a.name(), a.about()));
 				list.addSmall(row);
-				list.addHeader(Component.literal("Music"));
+				list.addHeader(Component.translatable("Music"));
 			}
 			String d = UcThemes.defaultSong(boss.key());
 			list.addSmall(choice("default", "(Default)" + (d != null ? " " + UcMusicScreen.name(d) : ""), "Its own ULTRAKILL theme."),
 				choice("off", "Off (Fight Music)", "No theme of its own: the Fight Music plays as chosen."));
 			list.addSmall(UcMusicScreen.folderButton(), null);
-			if (UcMusicScreen.SONGS.isEmpty()) list.addHeader(Component.literal("ULTRAKILL hasn't listed its soundtrack yet: start it (or open a world) and come back."));
+			if (UcMusicScreen.SONGS.isEmpty()) list.addHeader(Component.translatable("ULTRAKILL hasn't listed its soundtrack yet: start it (or open a world) and come back."));
 			Map<String, List<String>> groups = new LinkedHashMap<>();
 			for (String k : UcMusicScreen.all()) groups.computeIfAbsent(UcMusicScreen.group(k), g -> new ArrayList<>()).add(k);
 			for (var e : groups.entrySet()) {
@@ -118,7 +122,7 @@ final class UcBossMusicScreen extends OptionsSubScreen {
 				UltracraftConfig.save();
 				minecraft.setScreen(new Pick(lastScreen, boss));
 			}).build();
-			b.setTooltip(Tooltip.create(Component.literal(tooltip)));
+			b.setTooltip(Tooltip.create(Component.translatable(tooltip)));
 			return b;
 		}
 
@@ -130,7 +134,7 @@ final class UcBossMusicScreen extends OptionsSubScreen {
 				UltracraftConfig.save();
 				minecraft.setScreen(new Pick(lastScreen, boss));
 			}).build();
-			if (tooltip != null) b.setTooltip(Tooltip.create(Component.literal(tooltip)));
+			if (tooltip != null) b.setTooltip(Tooltip.create(Component.translatable(tooltip)));
 			return b;
 		}
 

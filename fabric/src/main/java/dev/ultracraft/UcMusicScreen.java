@@ -28,7 +28,7 @@ final class UcMusicScreen extends OptionsSubScreen {
 	static final List<String> SONGS = new ArrayList<>();
 
 	UcMusicScreen(Screen last) {
-		super(last, Minecraft.getInstance().options, Component.literal("Fight Music"));
+		super(last, Minecraft.getInstance().options, Component.translatable("Fight Music"));
 	}
 
 	/** The player's own songs: keys "Your Music/<file>". */
@@ -72,8 +72,8 @@ final class UcMusicScreen extends OptionsSubScreen {
 
 	/** A button that opens the Your Music folder. */
 	static Button folderButton() {
-		return Button.builder(Component.literal("Open Your Music Folder"), b -> Util.getPlatform().openPath(ownDir()))
-			.tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal("Put your own songs here (mp3, ogg or wav), then come back: they're listed under Your Music, for fights and bosses alike.")))
+		return Button.builder(Component.translatable("Open Your Music Folder"), b -> Util.getPlatform().openPath(ownDir()))
+			.tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("Put your own songs here (mp3, ogg or wav), then come back: they're listed under Your Music, for fights and bosses alike.")))
 			.build();
 	}
 
@@ -106,11 +106,11 @@ final class UcMusicScreen extends OptionsSubScreen {
 	protected void addOptions() {
 		list.addSmall(choice("off", "No ULTRAKILL music in fights."), choice("random", "A different ULTRAKILL song each fight."));
 		list.addSmall(folderButton(), null);
-		if (SONGS.isEmpty()) list.addHeader(Component.literal("ULTRAKILL hasn't listed its soundtrack yet: start it (or open a world) and come back."));
+		if (SONGS.isEmpty()) list.addHeader(Component.translatable("ULTRAKILL hasn't listed its soundtrack yet: start it (or open a world) and come back."));
 		Map<String, List<String>> groups = new LinkedHashMap<>();
 		for (String k : all()) groups.computeIfAbsent(group(k), g -> new ArrayList<>()).add(k);
 		for (var e : groups.entrySet()) {
-			list.addHeader(Component.literal(e.getKey()));
+			list.addHeader(Component.translatable(e.getKey()));
 			List<AbstractWidget> row = new ArrayList<>();
 			for (String k : e.getValue()) row.add(choice(k, null));
 			list.addSmall(row);
@@ -126,7 +126,7 @@ final class UcMusicScreen extends OptionsSubScreen {
 			// the list again, with the new pick marked
 			minecraft.setScreen(new UcMusicScreen(lastScreen));
 		}).build();
-		if (tooltip != null) b.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(tooltip)));
+		if (tooltip != null) b.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable(tooltip)));
 		return b;
 	}
 

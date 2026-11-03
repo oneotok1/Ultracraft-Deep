@@ -243,7 +243,7 @@ final class UkCommands {
 		mine.add(-amount);
 		mine.sendMoney();
 		theirs.award(amount);
-		to.sendSystemMessage(Component.literal(String.format(Locale.ROOT, "[Ultracraft] %s gave you %,d P.", from.getName().getString(), amount)).withStyle(ChatFormatting.GOLD));
+		to.sendSystemMessage(Component.translatable("[Ultracraft] %s gave you %s P.", from.getName().getString(), String.format(Locale.ROOT, "%,d", amount)).withStyle(ChatFormatting.GOLD));
 		return say(c, String.format(Locale.ROOT, "You gave %s %,d P. You have %,d P left.", to.getName().getString(), amount, mine.money));
 	}
 
@@ -307,7 +307,7 @@ final class UkCommands {
 	}
 
 	private static int callBoss(CommandContext<CommandSourceStack> c, String key, int seconds, String mods) throws CommandSyntaxException {
-		if (!UcNet.isV1(player(c))) return fail(c, "Become V1 first (F8).");
+		if (!UcNet.isV1(player(c))) return fail(c, "Become V1 first (%s).", Ultracraft.toggleKeyName());
 		if (UkBosses.busy()) return fail(c, "A boss is already coming or here (/uc boss leave).");
 		if (!key.equals("next") && UkBosses.byKey(key) == null) return fail(c, "Unknown boss. See /uc boss list.");
 		Ultracraft.lastInputAt = System.currentTimeMillis();
@@ -322,12 +322,12 @@ final class UkCommands {
 	}
 
 	private static int say(CommandContext<CommandSourceStack> c, String text) {
-		c.getSource().sendSuccess(() -> Component.literal(text).withStyle(ChatFormatting.GOLD), false);
+		c.getSource().sendSuccess(() -> Component.translatable(text).withStyle(ChatFormatting.GOLD), false);
 		return 1;
 	}
 
-	private static int fail(CommandContext<CommandSourceStack> c, String text) {
-		c.getSource().sendFailure(Component.literal(text));
+	private static int fail(CommandContext<CommandSourceStack> c, String text, Object... args) {
+		c.getSource().sendFailure(Component.translatable(text, args));
 		return 0;
 	}
 }

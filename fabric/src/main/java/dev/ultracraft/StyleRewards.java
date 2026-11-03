@@ -35,7 +35,7 @@ final class StyleRewards {
 		ServerOps.State st = ServerOps.state(sp);
 		st.rank = Math.max(0, Math.min(7, rank));
 		if (st.rank >= S || st.streak == 0) return;
-		if (st.streak >= 5 && UltracraftConfig.styleStreakText) sp.displayClientMessage(Component.literal("STYLE STREAK OVER: x" + st.streak).withStyle(ChatFormatting.GRAY), true);
+		if (st.streak >= 5 && UltracraftConfig.styleStreakText) sp.displayClientMessage(Component.translatable("STYLE STREAK OVER: x%s", st.streak).withStyle(ChatFormatting.GRAY), true);
 		st.streak = 0;
 	}
 
@@ -51,7 +51,7 @@ final class StyleRewards {
 		float chance = 0.12f + 0.06f * (st.rank - S) + Math.min(0.25f, st.streak * 0.01f);
 		if (r.nextFloat() < chance) drop(level, at, loot(st.rank, r, false));
 		if (st.streak % 5 == 0) milestone(sp, level, at, st, r);
-		else if (UltracraftConfig.styleStreakText) sp.displayClientMessage(Component.literal("STYLE STREAK x" + st.streak).withStyle(color(st.rank), ChatFormatting.BOLD), true);
+		else if (UltracraftConfig.styleStreakText) sp.displayClientMessage(Component.translatable("STYLE STREAK x%s", st.streak).withStyle(color(st.rank), ChatFormatting.BOLD), true);
 		return 1f + Math.min(2f, st.streak * 0.05f);
 	}
 
@@ -63,14 +63,14 @@ final class StyleRewards {
 		ExperienceOrb.award(level, at, st.streak * 2);
 		// the big number at every fifth kill is the same text, so the setting hides it too: the P is still paid
 		if (UltracraftConfig.styleStreakText && UltracraftConfig.styleStreakTitle) {
-			Component title = Component.literal("STYLE STREAK x" + st.streak).withStyle(color(st.rank), ChatFormatting.BOLD);
+			Component title = Component.translatable("STYLE STREAK x%s", st.streak).withStyle(color(st.rank), ChatFormatting.BOLD);
 			Component sub = Component.literal(RANKS[st.rank] + "   " + String.format(Locale.ROOT, "+%,d P", pay)).withStyle(ChatFormatting.YELLOW);
 			sp.connection.send(new ClientboundSetTitlesAnimationPacket(2, 30, 10));
 			sp.connection.send(new ClientboundSetSubtitleTextPacket(sub));
 			sp.connection.send(new ClientboundSetTitleTextPacket(title));
 		} else if (UltracraftConfig.styleStreakText) {
 			// without the big one the fifth kill reports in the same line as the rest
-			sp.displayClientMessage(Component.literal("STYLE STREAK x" + st.streak).withStyle(color(st.rank), ChatFormatting.BOLD), true);
+			sp.displayClientMessage(Component.translatable("STYLE STREAK x%s", st.streak).withStyle(color(st.rank), ChatFormatting.BOLD), true);
 		}
 		level.playSound(null, at.x, at.y, at.z, SoundEvents.PLAYER_LEVELUP, SoundSource.PLAYERS, 0.8f, 1.2f + 0.1f * (st.rank - S));
 		org.slf4j.LoggerFactory.getLogger("ultracraft").info("[style] {} streak x{} at {}: +{} P", sp.getName().getString(), st.streak, RANKS[st.rank], pay);

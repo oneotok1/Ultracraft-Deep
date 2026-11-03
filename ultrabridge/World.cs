@@ -1453,6 +1453,7 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
             Rewire(main.Find("The Cyber Grind/Cyber Grind Panel/Panel/Enter Button"), () => Net.Send("GRIND " + id));
             Rewire(main.Find("Sandbox/Sandbox Panel/Panel/Enter Button"), () => Net.Send("SPAWNS " + (spawnsOn ? 0 : 1)));
             ShopTexts(go);
+            shopObject = go;
             DressShopGear(go);
         }
 
@@ -1481,17 +1482,40 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
             var main = go.transform.Find("Canvas/Background/Main Panel");
             if (main == null) return;
             SetText(main.Find("The Cyber Grind/Cyber Grind Panel/Panel/Text Inset/Text"), grindRunning && !grindIn
-                ? "<color=#FF4343>The Cyber Grind</color> is on: another V1 is at wave <color=#FF4343>" + grindWave + "</color>.\n\nJoin them: the waves grow with every V1 in it."
+                ? (Zh
+                    ? "<color=#FF4343>电子血宫</color>正在进行：另一位 V1 在第 <color=#FF4343>" + grindWave + "</color> 波。\n\n加入他们：每多一位 V1，波次都会更强。"
+                    : "<color=#FF4343>The Cyber Grind</color> is on: another V1 is at wave <color=#FF4343>" + grindWave + "</color>.\n\nJoin them: the waves grow with every V1 in it.")
                 : grindRunning
-                ? "<color=#FF4343>The Cyber Grind</color> is running.\n\nWave <color=#FF4343>" + grindWave + "</color>, best <color=#FF4343>" + grindBest
-                  + "</color>.\n\nGo down and a teammate can bring you back; with nobody standing, it's over."
-                : "<color=#FF4343>The Cyber Grind</color> is an endless survival mode.\n\nWave after wave of enemies <color=#FF4343>around this terminal</color>, each bigger than the last."
-                  + (grindBest > 0 ? "\n\nBest: <color=#FF4343>wave " + grindBest + "</color>" : ""));
-            SetText(main.Find("The Cyber Grind/Cyber Grind Panel/Panel/Enter Button/Text"), grindRunning ? (grindIn ? "Leave The Cyber Grind" : "Join The Cyber Grind") : "Enter The Cyber Grind");
-            SetText(main.Find("Sandbox/Sandbox Panel/Panel/Text Inset/Text"),
-                "The <color=#FF4343>Sandbox</color> is an empty level that can be used for practicing.\n\nThis one is <color=#FF4343>Minecraft</color>.\n\nEnemies spawning in the dark: <color=#FF4343>"
-                + (spawnsOn ? "ON" : "OFF") + "</color>");
-            SetText(main.Find("Sandbox/Sandbox Panel/Panel/Enter Button/Text"), spawnsOn ? "Stop Dark Spawns" : "Allow Dark Spawns");
+                ? (Zh
+                    ? "<color=#FF4343>电子血宫</color>正在进行。\n\n第 <color=#FF4343>" + grindWave + "</color> 波，最佳 <color=#FF4343>" + grindBest
+                      + "</color>。\n\n倒下后队友可以把你救起；无人站着就结束了。"
+                    : "<color=#FF4343>The Cyber Grind</color> is running.\n\nWave <color=#FF4343>" + grindWave + "</color>, best <color=#FF4343>" + grindBest
+                      + "</color>.\n\nGo down and a teammate can bring you back; with nobody standing, it's over.")
+                : (Zh
+                    ? "<color=#FF4343>电子血宫</color>是无尽生存模式。\n\n一波接一波的敌人<color=#FF4343>围绕这台终端</color>涌来，每一波都比上一波更强。"
+                      + (grindBest > 0 ? "\n\n最佳：<color=#FF4343>第 " + grindBest + " 波</color>" : "")
+                    : "<color=#FF4343>The Cyber Grind</color> is an endless survival mode.\n\nWave after wave of enemies <color=#FF4343>around this terminal</color>, each bigger than the last."
+                      + (grindBest > 0 ? "\n\nBest: <color=#FF4343>wave " + grindBest + "</color>" : "")));
+            SetText(main.Find("The Cyber Grind/Cyber Grind Panel/Panel/Enter Button/Text"), grindRunning
+                ? (grindIn ? UiText("Leave The Cyber Grind") : UiText("Join The Cyber Grind"))
+                : UiText("Enter The Cyber Grind"));
+            SetText(main.Find("Sandbox/Sandbox Panel/Panel/Text Inset/Text"), Zh
+                ? "<color=#FF4343>沙盒</color>是一个可以用来练习的空关卡。\n\n这一关是 <color=#FF4343>Minecraft</color>。\n\n黑暗中生成敌人：<color=#FF4343>"
+                  + (spawnsOn ? "开" : "关") + "</color>"
+                : "The <color=#FF4343>Sandbox</color> is an empty level that can be used for practicing.\n\nThis one is <color=#FF4343>Minecraft</color>.\n\nEnemies spawning in the dark: <color=#FF4343>"
+                  + (spawnsOn ? "ON" : "OFF") + "</color>");
+            SetText(main.Find("Sandbox/Sandbox Panel/Panel/Enter Button/Text"), UiText(spawnsOn ? "Stop Dark Spawns" : "Allow Dark Spawns"));
+            // the Chinese text needs a font that has the glyphs
+            ApplyShopFont(main);
+        }
+
+        /// <summary>Set in DressShop so the main panels can be redone when Minecraft's language changes.</summary>
+        GameObject shopObject;
+
+        /// <summary>Redoes the main menu's own text in Minecraft's language.</summary>
+        internal void ShopTexts()
+        {
+            if (shopObject != null) ShopTexts(shopObject);
         }
 
         static void SetText(Transform t, string text)

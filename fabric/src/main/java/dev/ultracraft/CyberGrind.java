@@ -90,6 +90,13 @@ final class CyberGrind {
 		return running && runner != null && runner.equals(sp.getUUID());
 	}
 
+	/** Where a downed player's revive marker goes when they fell off the arenas: the arena's spawn, so the marker (and
+	 * whoever comes back after a wipe) lands inside the Grind, not at the bottom of the fall. */
+	static Vec3 markerSpot(ServerPlayer sp) {
+		if (!running || !arenaMode || arena == null || sp.level().dimension() != GrindArenas.DIMENSION) return null;
+		return arena.spawn();
+	}
+
 	/** The runner died alone, went back to Steve, or left the arenas: someone else carries the run on, or it ends. */
 	static void stopIfRunner(ServerPlayer sp, String why) {
 		if (isRunner(sp) && !handOff(sp, why)) stop(sp, why);
@@ -175,7 +182,7 @@ final class CyberGrind {
 		ServerLevel level = GrindArenas.level(server);
 		if (level == null || arena == null) return;
 		if (!UcNet.isV1(sp)) {
-			sp.displayClientMessage(Component.literal("Become V1 to join the Cyber Grind."), true);
+			sp.displayClientMessage(Component.translatable("Become V1 to join the Cyber Grind."), true);
 			return;
 		}
 		party.put(sp.getUUID(), new Return(sp.level().dimension(), sp.position(), sp.getYRot(), sp.getXRot()));
@@ -185,7 +192,7 @@ final class CyberGrind {
 		UcNet.send(sp, "SKY " + GrindArenas.sky(arenaIndex, server.overworld().getRandom()));
 		sp.connection.send(new ClientboundSetTitlesAnimationPacket(5, 40, 15));
 		sp.connection.send(new ClientboundSetSubtitleTextPacket(Component.literal("WAVE " + wave + "  -  " + arena.def().title()).withStyle(ChatFormatting.GRAY)));
-		sp.connection.send(new ClientboundSetTitleTextPacket(Component.literal("THE CYBER GRIND").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)));
+		sp.connection.send(new ClientboundSetTitleTextPacket(Component.translatable("THE CYBER GRIND").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)));
 		UcNet.send(sp, GrindArenas.padsMessage());
 		hud(sp.getName().getString() + " JOINED THE RUN");
 		sendState();
@@ -215,7 +222,7 @@ final class CyberGrind {
 			sp.teleportTo(back, r.at().x, r.at().y, r.at().z, Set.of(), r.yaw(), r.pitch(), true);
 			sp.fallDistance = 0;
 		}
-		sp.displayClientMessage(Component.literal(String.format(Locale.ROOT, "You left the Cyber Grind at wave %d; it goes on without you.", wave)), false);
+		sp.displayClientMessage(Component.translatable("You left the Cyber Grind at wave %s; it goes on without you.", wave), false);
 		hud(sp.getName().getString() + " LEFT THE RUN");
 		sendState();
 	}
@@ -267,11 +274,11 @@ final class CyberGrind {
 			if (isRunner(sp)) stop(sp, "left");
 			else if (arenaMode && party.containsKey(sp.getUUID())) leave(sp);
 			else if (arenaMode) join(sp);
-			else sp.displayClientMessage(Component.literal("The Cyber Grind is on around a shop: fight there with them."), true);
+			else sp.displayClientMessage(Component.translatable("The Cyber Grind is on around a shop: fight there with them."), true);
 			return;
 		}
 		if (UkBosses.busy()) {
-			sp.displayClientMessage(Component.literal("Not now: a boss is coming for you."), true);
+			sp.displayClientMessage(Component.translatable("Not now: a boss is coming for you."), true);
 			return;
 		}
 		BlockPos anchor = BlockPos.of(id);
@@ -306,7 +313,7 @@ final class CyberGrind {
 			return;
 		}
 		hud("THE CYBER GRIND");
-		sp.displayClientMessage(Component.literal("The Cyber Grind: waves of enemies around this shop. Dying or leaving ends it."), true);
+		sp.displayClientMessage(Component.translatable("The Cyber Grind: waves of enemies around this shop. Dying or leaving ends it."), true);
 		sendState();
 	}
 
@@ -383,11 +390,10 @@ final class CyberGrind {
 			}
 			// the arena's name, big, as ULTRAKILL opens a level
 			o.connection.send(new ClientboundSetTitlesAnimationPacket(5, 50, 15));
-			o.connection.send(new ClientboundSetSubtitleTextPacket(Component.literal(first ? "THE CYBER GRIND" : "WAVE " + (wave + 1))
+			o.connection.send(new ClientboundSetSubtitleTextPacket(first ? Component.translatable("THE CYBER GRIND") : Component.translatable("WAVE %s", wave + 1)
 				.withStyle(ChatFormatting.GRAY)));
 			o.connection.send(new ClientboundSetTitleTextPacket(Component.literal(arena.def().title()).withStyle(ChatFormatting.RED, ChatFormatting.BOLD)));
-			if (first) o.displayClientMessage(Component.literal("Every wave the grid shifts to a new pattern. Leave the Cyber Grind from its shop, on the ledge to the "
-				+ GrindArenas.direction(arena) + " (under the column of lights).").withStyle(ChatFormatting.GRAY), false);
+			if (first) o.displayClientMessage(Component.translatable("Every wave the grid shifts to a new pattern. Leave the Cyber Grind from its shop, on the ledge to the %s (under the column of lights).", GrindArenas.direction(arena)).withStyle(ChatFormatting.GRAY), false);
 		}
 		hud(arena.def().title());
 		// ULTRAKILL's own sky over it
@@ -407,13 +413,19 @@ final class CyberGrind {
 				stopIfRunner(sp, "left the arenas");
 				return;
 			}
-			// off the edge: back onto the arena, as ULTRAKILL puts V1 back after a fall
+			// off the edge: with void death on, falling kills like one of ULTRAKILL's pits (the marker goes to the
+			// arena, not the fall); otherwise back onto the arena, as ULTRAKILL puts V1 back after a fall
+			boolean voidDeath = UltracraftConfig.grindVoidDeath;
 			for (UUID id : party.keySet()) {
 				ServerPlayer o = server.getPlayerList().getPlayer(id);
 				if (o != null && o.isAlive() && o.level().dimension() == GrindArenas.DIMENSION && o.getY() < GrindArenas.voidY()) {
-					Vec3 to = arena.spawn();
-					o.teleportTo(o.level(), to.x, to.y, to.z, Set.of(), o.getYRot(), o.getXRot(), true);
-					o.fallDistance = 0;
+					if (voidDeath) {
+						UcNet.send(o, "HURT 0 void");
+					} else {
+						Vec3 to = arena.spawn();
+						o.teleportTo(o.level(), to.x, to.y, to.z, Set.of(), o.getYRot(), o.getXRot(), true);
+						o.fallDistance = 0;
+					}
 				}
 			}
 		} else if (sp.position().distanceTo(center) > LEAVE || !sp.level().getBlockState(BlockPos.of(shopId)).is(UltracraftCommon.UK_SHOP)) {
@@ -565,12 +577,21 @@ final class CyberGrind {
 		int prize = 250 * wave;
 		// everyone fighting it is paid
 		for (ServerPlayer o : sp.level().getServer().getPlayerList().getPlayers()) {
-			if (o == sp || (UcNet.isV1(o) && o.level() == sp.level() && o.position().distanceTo(center) < LEAVE + 20)) UkProgress.get(o).award(prize);
+			if (o == sp || (UcNet.isV1(o) && o.level() == sp.level() && o.position().distanceTo(center) < LEAVE + 20)) {
+				UkProgress.get(o).award(prize);
+				// as the Cyber Grind does: every cleared wave, V1 whole again (its own health, stamina and charges)
+				o.setHealth(o.getMaxHealth());
+				UcNet.send(o, "FULLHEAL");
+				UcNet.send(o, "GRINDRESTORE");
+			}
 		}
 		if (wave > UltracraftConfig.grindBest) {
 			UltracraftConfig.grindBest = wave;
 			UltracraftConfig.save();
 		}
+		// what the wave dropped, often inside the columns that just moved, goes to the shop's ledge while the grid
+		// settles, so it can be picked up before the next wave
+		collectDrops(sp);
 		UcNet.send(sp, "GRINDCLEAR");
 		// as ULTRAKILL does: every cleared wave, the grid slides into the next pattern (its pads go until it's there)
 		String pattern = arenaMode ? GrindArenas.nextPattern(wave + 1) : null;
@@ -594,6 +615,26 @@ final class CyberGrind {
 		sendState();
 	}
 
+	/** The items the wave dropped, moved to the shop's ledge (the little platform by the terminal) before the next
+	 * wave: they often sit inside the columns, which move through where they lie. */
+	private static void collectDrops(ServerPlayer sp) {
+		if (!arenaMode) return;
+		ServerLevel level = sp.level();
+		if (level.dimension() != GrindArenas.DIMENSION) return;
+		Vec3 at = GrindArenas.ledgeAnchor();
+		if (at == null) return;
+		AABB box = new AABB(GrindArenas.OX - GrindArenas.HALF - 4, GrindArenas.Y - 20, GrindArenas.OZ - GrindArenas.HALF - 4,
+			GrindArenas.OX + GrindArenas.HALF + 4, GrindArenas.Y + 40, GrindArenas.OZ + GrindArenas.HALF + 12);
+		int moved = 0;
+		for (net.minecraft.world.entity.item.ItemEntity item : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box)) {
+			if (item.isRemoved()) continue;
+			item.teleportTo(at.x, at.y, at.z);
+			item.setDefaultPickUpDelay();
+			moved++;
+		}
+		if (moved > 0) org.slf4j.LoggerFactory.getLogger("ultracraft").info("Cyber Grind: {} drop(s) moved to the shop's ledge", moved);
+	}
+
 	/** The run is over: V1 died, left, became Steve, or pressed Leave. */
 	static void stop(ServerPlayer sp, String why) {
 		if (!running) return;
@@ -609,7 +650,7 @@ final class CyberGrind {
 		if (owner != null) UcNet.send(owner, "GRINDCLEAR");
 		hud("THE CYBER GRIND IS OVER: WAVE " + wave);
 		if (sp != null) {
-			sp.displayClientMessage(Component.literal(String.format(Locale.ROOT, "The Cyber Grind is over (%s): wave %d, best %d", why, wave, UltracraftConfig.grindBest)), false);
+			sp.displayClientMessage(Component.translatable("The Cyber Grind is over (%s): wave %s, best %s", why, wave, UltracraftConfig.grindBest), false);
 		}
 		if (arenaMode) leaveArenas();
 		sendState();

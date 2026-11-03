@@ -28,6 +28,7 @@ import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRe
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
@@ -73,7 +74,9 @@ public final class UltracraftCommon implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
-		FabricDefaultAttributeRegistry.register(UK_ENEMY, Mob.createMobAttributes());
+		// UK stand-ins never fight or take MC damage; the attribute is only the container: 1024 so a synced UK
+		// max health of up to ~10000 (a boss with buffs) is never clamped when read back on the 10:1 scale
+		FabricDefaultAttributeRegistry.register(UK_ENEMY, Mob.createMobAttributes().add(Attributes.MAX_HEALTH, 1024.0));
 		ItemGroupEvents.modifyEntriesEvent(CreativeModeTabs.FUNCTIONAL_BLOCKS).register(entries -> entries.accept(UK_SHOP_ITEM));
 		// the Cyber Grind's arenas can't be dug into (or their shop taken away), except in creative
 		net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, be) ->
@@ -160,6 +163,8 @@ public final class UltracraftCommon implements ModInitializer {
 			int id = Integer.parseInt(a[0]);
 			double x = Double.parseDouble(a[2]), y = Double.parseDouble(a[3]), z = Double.parseDouble(a[4]);
 			float w = Float.parseFloat(a[5]), h = Float.parseFloat(a[6]);
+			float ukHp = a.length > 7 ? Float.parseFloat(a[7]) : -1f;
+			float ukMax = a.length > 11 ? Float.parseFloat(a[11]) : -1f;
 			seen.add(id);
 			UkEnemyEntity e = mine.get(id);
 			if (e == null || e.isRemoved() || e.level() != level) {
@@ -179,6 +184,14 @@ public final class UltracraftCommon implements ModInitializer {
 				e.lastSeen = now;
 			}
 			if (a.length > 10) e.setLook(a[8], Float.parseFloat(a[9]), Integer.parseInt(a[10]));
+			// ULTRAKILL's own health (and, with a newer bridge, its max) — shown by Jade on the UK_TO_MC scale
+			if (ukHp >= 0f) e.setUkHealth(ukHp, ukMax);
+			// with void death on, one of the Grind's enemies that fell off the edge dies like V1 does, instead of
+			// being pulled back onto the grid by its own navigation (which reads as teleporting back)
+			if (UltracraftConfig.grindVoidDeath && CyberGrind.isRunner(owner) && y < GrindArenas.voidY()
+				&& owner.level().dimension() == GrindArenas.DIMENSION) {
+				UcNet.send(owner, "UKINSTAKILL " + id);
+			}
 		}
 		Iterator<Map.Entry<Integer, UkEnemyEntity>> it = mine.entrySet().iterator();
 		while (it.hasNext()) {

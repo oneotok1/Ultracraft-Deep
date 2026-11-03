@@ -56,12 +56,12 @@ final class UkLauncher {
 					launch();
 				}
 				mc.setScreen(new TitleScreen());
-			}, Component.literal("Set up ULTRAKILL for Ultracraft?"),
+			}, Component.translatable("Set up ULTRAKILL for Ultracraft?"),
 				Component.literal("Ultracraft plays the real ULTRAKILL alongside Minecraft. For that, ULTRAKILL needs BepInEx 5 (a mod loader) and "
 					+ "Ultracraft's UltraBridge plugin, both included in this mod. Ultracraft will add them to\n" + UkInstaller.game()
 					+ "\n\nNothing else there is changed, and ULTRAKILL's own save and settings are never touched. Its plugin is kept up to date with "
 					+ "each new version of Ultracraft. You can remove it any time: delete BepInEx/plugins/UltraBridge."),
-				Component.literal("Install"), Component.literal("Not now"))));
+				Component.translatable("Install"), Component.translatable("Not now"))));
 		});
 		ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> close());
 	}

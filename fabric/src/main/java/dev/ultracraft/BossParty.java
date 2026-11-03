@@ -103,16 +103,17 @@ final class BossParty {
 		sp.setGameMode(GameType.SPECTATOR);
 		UcNet.send(sp, "C:DOWNED 1");
 		watch(sp, mate);
-		sp.displayClientMessage(Component.literal("You're down: watching " + mate.getName().getString() + ". A teammate standing where you fell brings you back.")
+		sp.displayClientMessage(Component.translatable("You're down: watching %s. A teammate standing where you fell brings you back.", mate.getName().getString())
 			.withStyle(ChatFormatting.RED), false);
 		for (ServerPlayer o : server.getPlayerList().getPlayers()) {
-			if (o != sp) o.displayClientMessage(Component.literal(sp.getName().getString() + " is down! Stand where they fell to bring them back.").withStyle(ChatFormatting.RED), false);
+			if (o != sp) o.displayClientMessage(Component.translatable("%s is down! Stand where they fell to bring them back.", sp.getName().getString()).withStyle(ChatFormatting.RED), false);
 		}
 		sendDowns();
 		return true;
 	}
 
-	/** Where a revive marker goes: where they fell, if a teammate can stand there; else by the teammate. */
+	/** Where a revive marker goes: where they fell, if a teammate can stand there; else by the teammate. A fall off
+	 * the Grind's arenas has nothing to stand on: the marker goes to the arena's spawn, not the void below. */
 	private static Vec3 fallSpot(ServerPlayer sp, ServerPlayer mate) {
 		ServerLevel level = sp.level();
 		BlockPos feet = sp.blockPosition();
@@ -123,7 +124,8 @@ final class BossParty {
 				return Vec3.atBottomCenterOf(below.above());
 			}
 		}
-		return mate.position();
+		Vec3 fell = CyberGrind.markerSpot(sp);
+		return fell != null ? fell : mate.position();
 	}
 
 	/**
@@ -182,14 +184,14 @@ final class BossParty {
 		// two on it are quicker
 		down.progress += 10 * Math.min(2, on.size());
 		int pct = Math.min(100, down.progress * 100 / REVIVE_TICKS);
-		String bar = "Reviving " + d.getName().getString() + "  " + "|".repeat(pct / 5) + ".".repeat(20 - pct / 5) + "  " + pct + "%";
+		String bar = net.minecraft.network.chat.Component.translatable("Reviving %s", d.getName().getString()).getString() + "  " + "|".repeat(pct / 5) + ".".repeat(20 - pct / 5) + "  " + pct + "%";
 		for (ServerPlayer o : on) o.displayClientMessage(Component.literal(bar).withStyle(ChatFormatting.GREEN), true);
-		d.displayClientMessage(Component.literal(on.get(0).getName().getString() + " is bringing you back  " + pct + "%").withStyle(ChatFormatting.GREEN), true);
+		d.displayClientMessage(Component.translatable("%s is bringing you back  %s%%", on.get(0).getName().getString(), pct).withStyle(ChatFormatting.GREEN), true);
 		if (down.progress >= REVIVE_TICKS) {
 			downed.remove(d.getUUID());
 			stand(d, down, level, down.spot, on.get(0).getYRot());
 			for (ServerPlayer o : s.getPlayerList().getPlayers()) {
-				o.displayClientMessage(Component.literal(on.get(0).getName().getString() + " brought " + d.getName().getString() + " back!").withStyle(ChatFormatting.GOLD), false);
+				o.displayClientMessage(Component.translatable("%s brought %s back!", on.get(0).getName().getString(), d.getName().getString()).withStyle(ChatFormatting.GOLD), false);
 			}
 			sendDowns();
 		}
@@ -207,7 +209,7 @@ final class BossParty {
 		level.sendParticles(ParticleTypes.TOTEM_OF_UNDYING, d.getX(), d.getY() + 1.0, d.getZ(), 120, 0.6, 1.0, 0.6, 0.6);
 		level.sendParticles(ParticleTypes.END_ROD, d.getX(), d.getY() + 1.0, d.getZ(), 40, 0.4, 1.2, 0.4, 0.15);
 		level.playSound(null, d.getX(), d.getY(), d.getZ(), SoundEvents.TOTEM_USE, SoundSource.PLAYERS, 1f, 1f);
-		d.displayClientMessage(Component.literal("You're back!").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), true);
+		d.displayClientMessage(Component.translatable("You're back!").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), true);
 	}
 
 	/** Every player's markers for the downed (C:DOWNS name,x,y,z,percent;...), for the HUD (Teammates). */

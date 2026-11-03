@@ -45,7 +45,7 @@ final class GrindArenas {
 	static final ResourceKey<Level> DIMENSION = ResourceKey.create(Registries.DIMENSION, Identifier.fromNamespaceAndPath("ultracraft", "cybergrind"));
 
 	/** Where the grid's level 0 is (the top of a level-0 column), and where it stands. */
-	private static final int Y = 100, OX = 1024, OZ = 0;
+	static final int Y = 100, OX = 1024, OZ = 0;
 	/** 16 x 16 tiles of 3 x 3 blocks; heights in half blocks, three to a pattern level. */
 	static final int N = 16, TILE = 3, SIZE = N * TILE, HALF = SIZE / 2, PER_LEVEL = 3;
 	/** The lowest and highest a column goes (half blocks from Y), and the columns' foot. */
@@ -392,29 +392,28 @@ final class GrindArenas {
 	}
 
 	/**
-	 * Puts a V1 back on top of the highest arena block his own box overlaps. The block's real collision shape is what
-	 * counts and it must really overlap him, so standing on a column, or beside a taller one, is left alone: only a
-	 * column that has closed over him (raised through his box, or built where he stands) moves him at all, and it
-	 * moves him to the top of whatever he is inside, the one place that is not inside anything.
+	 * Puts a player back on top of the arena column under the middle of him, when that column's top has closed over
+	 * him. Only the column his centre is in counts, and only when its surface is more than a step above his feet, so
+	 * walking the staircases (each step a mere half block at his feet) and sliding into a taller column's side (his
+	 * centre still on his own floor) are left alone: a column that raised through him, or blocks built where he
+	 * stands, puts him on top of the one place that is not inside anything.
 	 */
 	private static void lift(ServerLevel level, ServerPlayer o) {
-		AABB box = o.getBoundingBox();
+		int x = Mth.floor(o.getX()), z = Mth.floor(o.getZ());
+		if (!inGrid(x, z)) return;
+		double feet = o.getY();
 		BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
 		double surface = Double.NEGATIVE_INFINITY;
-		for (int x = Mth.floor(box.minX); x <= Mth.floor(box.maxX); x++) {
-			for (int z = Mth.floor(box.minZ); z <= Mth.floor(box.maxZ); z++) {
-				if (!inGrid(x, z)) continue;
-				for (int y = Mth.floor(box.minY) - 1; y <= Mth.ceil(box.maxY); y++) {
-					m.set(x, y, z);
-					BlockState state = level.getBlockState(m);
-					if (state.isAir()) continue;
-					VoxelShape shape = state.getCollisionShape(level, m);
-					if (shape.isEmpty() || !shape.move(x, y, z).bounds().intersects(box)) continue;
-					surface = Math.max(surface, y + shape.max(Direction.Axis.Y));
-				}
-			}
+		for (int y = Mth.floor(feet) - 1; y <= Mth.ceil(o.getBoundingBox().maxY); y++) {
+			m.set(x, y, z);
+			BlockState state = level.getBlockState(m);
+			if (state.isAir()) continue;
+			VoxelShape shape = state.getCollisionShape(level, m);
+			if (shape.isEmpty()) continue;
+			surface = Math.max(surface, y + shape.max(Direction.Axis.Y));
 		}
-		if (surface == Double.NEGATIVE_INFINITY || o.getY() >= surface - 0.02) return;
+		// a step (or less) above the feet is terrain he can walk or slide on, not a column closed over him
+		if (surface == Double.NEGATIVE_INFINITY || surface - feet <= 0.6 + 0.02) return;
 		o.teleportTo(level, o.getX(), surface, o.getZ(), Set.of(), o.getYRot(), o.getXRot(), true);
 		o.fallDistance = 0;
 	}
@@ -524,6 +523,12 @@ final class GrindArenas {
 		return at;
 	}
 
+	/** The middle of the shop's ledge, clear of the shop itself and the bridge onto it. */
+	static Vec3 ledgeAnchor() {
+		int z0 = OZ + HALF + 2;
+		return new Vec3(OX + 2.5, Y + 0.5, z0 + 2.5);
+	}
+
 	// ------------------------------------------------------------------ where things go
 
 	/** Where V1 lands: the tile nearest the middle that's no pit, on top of it. */
@@ -618,7 +623,7 @@ final class GrindArenas {
 		for (int part = 0; part < UkShopBlock.PARTS; part++) {
 			level.setBlock(anchor.offset(UkShopBlock.offset(facing, part)), state.setValue(UkShopBlock.PART, part), 3);
 		}
-		// its marker: a column of lights rising over it
+		// the shop's beacon: light blocks up in the air, showing where the shop is from across the grid
 		for (int y = 4; y <= 16; y += 2) level.setBlock(anchor.above(y), d.p.light.defaultBlockState(), 2 | 16);
 	}
 

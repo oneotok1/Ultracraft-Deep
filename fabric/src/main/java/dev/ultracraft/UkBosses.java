@@ -44,6 +44,11 @@ final class UkBosses {
 	/** A boss: the bridge's key, its name, its tier, the P, experience it pays, and where it likes to turn up. */
 	record Boss(String key, String name, int tier, int reward, int xp, String home) {}
 
+	/** The boss's name in the player's language (boss.ultracraft.<key>); ULTRAKILL's own HUD keeps the plain one. */
+	static net.minecraft.network.chat.MutableComponent bossName(Boss b) {
+		return net.minecraft.network.chat.Component.translatable("boss.ultracraft." + b.key);
+	}
+
 	static final List<Boss> ROSTER = List.of(
 		new Boss("swordsmachine", "SWORDSMACHINE", 1, 5000, 60, ""),
 		new Boss("cerberus", "CERBERUS", 1, 6000, 70, "nether"),
@@ -241,7 +246,7 @@ final class UkBosses {
 		if (phase != Phase.IDLE) return;
 		Boss b = key.equals("next") ? pick(sp, UkProgress.get(sp)) : byKey(key);
 		if (b == null && key.equals("next")) {
-			sp.sendSystemMessage(Component.literal("[Ultracraft] Every boss you can face is out of rotation (Cheats -> Boss Setup).").withStyle(ChatFormatting.GRAY));
+			sp.sendSystemMessage(Component.translatable("[Ultracraft] Every boss you can face is out of rotation (Cheats -> Boss Setup).").withStyle(ChatFormatting.GRAY));
 			return;
 		}
 		if (b == null) return;
@@ -267,7 +272,7 @@ final class UkBosses {
 			mods.clear();
 			mods.addAll(chosen);
 		}
-		sp.sendSystemMessage(Component.literal("[Ultracraft] (set to " + describe() + ")").withStyle(ChatFormatting.GRAY));
+		sp.sendSystemMessage(Component.literal("[Ultracraft] (set to ").withStyle(ChatFormatting.GRAY).append(describeColored()).append(Component.literal(")").withStyle(ChatFormatting.GRAY)));
 	}
 
 	/** An arena's boss: it was waiting there, so there's no warning; it comes onto the dais at once. */
@@ -326,18 +331,31 @@ final class UkBosses {
 		}
 	}
 
-	/** "NIGHTMARE, RADIANT, VOLATILE". */
+	/** The difficulty and traits in the player's language (difficulty.ultracraft.<name>, trait.ultracraft.<key>). */
+	private static Component describeColored() {
+		var c = Component.translatable("Difficulty: ").withStyle(ChatFormatting.GRAY)
+			.append(Component.translatable(difficultyKey(difficulty)).withStyle(DIFFICULTY_COLOR[difficulty], ChatFormatting.BOLD));
+		// no modifiers rolled: the traits part stays away whole, label and all
+		if (mods.isEmpty()) return c;
+		var traits = Component.translatable("Traits: ").withStyle(ChatFormatting.GRAY);
+		for (Mod m : mods) {
+			if (m != mods.getFirst()) traits.append(Component.literal("  "));
+			traits.append(Component.translatable("trait.ultracraft." + m.key).withStyle(m.color));
+		}
+		return c.append(Component.literal(" | ").withStyle(ChatFormatting.DARK_GRAY)).append(traits);
+	}
+
+	/** The same as plain text, in English: the bridge's HUD and the debug line have no language to look up. */
 	private static String describe() {
 		StringBuilder sb = new StringBuilder(DIFFICULTY[difficulty]);
 		for (Mod m : mods) sb.append(", ").append(m.title);
 		return sb.toString();
 	}
 
-	/** The same, coloured. */
-	private static Component describeColored() {
-		var c = Component.literal(DIFFICULTY[difficulty]).withStyle(DIFFICULTY_COLOR[difficulty], ChatFormatting.BOLD);
-		for (Mod m : mods) c.append(Component.literal("  " + m.title).withStyle(m.color));
-		return c;
+	/** difficulty.ultracraft.<lowercase name> for a tier index, and for the Auto setting (0). */
+	static String difficultyKey(int tier) {
+		if (tier < 0 || tier >= DIFFICULTY.length) return "difficulty.ultracraft.auto";
+		return "difficulty.ultracraft." + DIFFICULTY[tier].toLowerCase(Locale.ROOT).replace(" ", "");
 	}
 
 	private static boolean has(String key) {
@@ -370,16 +388,16 @@ final class UkBosses {
 		phase = Phase.WARN;
 		difficulty = difficultyFor(UkProgress.get(sp));
 		rollMods(sp);
-		title(sp, Component.literal("WARNING").withStyle(ChatFormatting.RED, ChatFormatting.BOLD),
-			Component.literal(b.name + " IS COMING").withStyle(ChatFormatting.RED), 10, 70, 20);
+		title(sp, Component.translatable("WARNING").withStyle(ChatFormatting.RED, ChatFormatting.BOLD),
+			Component.translatable("%s IS COMING", bossName(b)).withStyle(ChatFormatting.RED), 10, 70, 20);
 		sp.level().playSound(null, sp.getX(), sp.getY(), sp.getZ(), SoundEvents.RAID_HORN, SoundSource.HOSTILE, 64f, 1f);
-		sp.sendSystemMessage(Component.literal(String.format(Locale.ROOT, "[Ultracraft] WARNING: %s is coming in %d seconds, where the red pillar stands. Get ready!",
-			b.name, warnLeft / 20)).withStyle(ChatFormatting.RED));
-		sp.sendSystemMessage(Component.literal("[Ultracraft] ").withStyle(ChatFormatting.RED).append(describeColored()));
+		sp.sendSystemMessage(Component.translatable("[Ultracraft] WARNING: %s is coming in %s seconds, where the red pillar stands. Get ready!",
+			bossName(b), warnLeft / 20).withStyle(ChatFormatting.RED));
+		sp.sendSystemMessage(Component.translatable("[Ultracraft] ").withStyle(ChatFormatting.RED).append(describeColored()));
 		UcNet.send(sp, "HUD <color=red>WARNING</color>: " + b.name + " is coming. " + warnLeft / 20 + " seconds to get ready.");
 		// the other players hear it too
 		for (ServerPlayer o : sp.level().getServer().getPlayerList().getPlayers()) {
-			if (o != sp) o.sendSystemMessage(Component.literal("[Ultracraft] " + b.name + " is coming for " + sp.getName().getString() + ".").withStyle(ChatFormatting.RED));
+			if (o != sp) o.sendSystemMessage(Component.translatable("[Ultracraft] %s is coming for %s.", bossName(b), sp.getName().getString()).withStyle(ChatFormatting.RED));
 		}
 	}
 
@@ -401,10 +419,11 @@ final class UkBosses {
 		if (!shopping && warnLeft > floor) warnLeft = Math.max(floor, warnLeft - 10);
 		int secs = (warnLeft + 19) / 20;
 		if (warnLeft % 20 == 0 || shopping) {
-			String bar = shopping ? boss.name + " waits while you shop"
-				: !playing ? boss.name + " is coming: it waits for you to come back"
-				: String.format(Locale.ROOT, "%s arrives in %d s - get ready", boss.name, secs);
-			sp.displayClientMessage(Component.literal(bar).withStyle(ChatFormatting.RED), true);
+			net.minecraft.network.chat.MutableComponent bar = shopping
+				? Component.translatable("%s waits while you shop", bossName(boss))
+				: !playing ? Component.translatable("%s is coming: it waits for you to come back", bossName(boss))
+				: Component.translatable("%s arrives in %s s - get ready", bossName(boss), secs);
+			sp.displayClientMessage(bar.withStyle(ChatFormatting.RED), true);
 		}
 		if (shopping || warnLeft % 20 != 0) return;
 		if (secs == 10) UcNet.send(sp, "HUD " + boss.name + " arrives in <color=red>10 seconds</color>.");
@@ -464,7 +483,7 @@ final class UkBosses {
 		stormIn = 60;
 		strikeAt = null;
 		if (bar != null) bar.removeAllPlayers();
-		bar = new net.minecraft.server.level.ServerBossEvent(Component.literal(boss.name).withStyle(ChatFormatting.RED),
+		bar = new net.minecraft.server.level.ServerBossEvent(bossName(boss).withStyle(ChatFormatting.RED),
 			net.minecraft.world.BossEvent.BossBarColor.RED, net.minecraft.world.BossEvent.BossBarOverlay.NOTCHED_10);
 		barMax = 0f;
 	}
@@ -480,8 +499,8 @@ final class UkBosses {
 			level.addFreshEntity(bolt);
 		}
 		// with its entrance on, ULTRAKILL shows its own title card for it
-		if (UltracraftConfig.bossIntros == 0) title(sp, Component.literal(boss.name).withStyle(ChatFormatting.RED, ChatFormatting.BOLD), describeColored(), 5, 60, 15);
-		else sp.sendSystemMessage(Component.literal("[Ultracraft] " + boss.name + ": ").withStyle(ChatFormatting.RED).append(describeColored()));
+		if (UltracraftConfig.bossIntros == 0) title(sp, bossName(boss).withStyle(ChatFormatting.RED, ChatFormatting.BOLD), describeColored(), 5, 60, 15);
+		else sp.sendSystemMessage(Component.translatable("[Ultracraft] %s: ", bossName(boss)).withStyle(ChatFormatting.RED).append(describeColored()));
 		StringBuilder keys = new StringBuilder();
 		for (Mod m : mods) keys.append(keys.length() > 0 ? "," : "").append(m.key);
 		// its entrance (which of them: Boss Music & Intros), and its death scene
@@ -602,8 +621,8 @@ final class UkBosses {
 			phase = Phase.IDLE;
 			boss = null;
 			target = null;
-			title(sp, Component.literal(b.name).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), Component.literal("DEFEATED   (PRACTICE)").withStyle(ChatFormatting.GRAY), 5, 80, 20);
-			sp.sendSystemMessage(Component.literal("[Ultracraft] " + b.name + " defeated (practice: no reward, not counted).").withStyle(ChatFormatting.GRAY));
+			title(sp, bossName(b).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), Component.translatable("DEFEATED   (PRACTICE)").withStyle(ChatFormatting.GRAY), 5, 80, 20);
+			sp.sendSystemMessage(Component.translatable("[Ultracraft] %s defeated (practice: no reward, not counted).", bossName(b)).withStyle(ChatFormatting.GRAY));
 			if (arenaCleared != null) arenaCleared.run();
 			return;
 		}
@@ -626,11 +645,11 @@ final class UkBosses {
 			item.setGlowingTag(true);
 			level.addFreshEntity(item);
 		}
-		String paid = String.format(Locale.ROOT, "+%,d P", pay);
-		title(sp, Component.literal(b.name).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), Component.literal("DEFEATED   " + paid).withStyle(ChatFormatting.YELLOW), 5, 80, 20);
+		String paid = String.format(Locale.ROOT, "+%,dP", pay);
+		title(sp, bossName(b).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), Component.translatable("DEFEATED   %s", paid).withStyle(ChatFormatting.YELLOW), 5, 80, 20);
 		level.playSound(null, sp.getX(), sp.getY(), sp.getZ(), SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundSource.PLAYERS, 1f, 1f);
-		sp.sendSystemMessage(Component.literal(String.format(Locale.ROOT, "[Ultracraft] %s defeated: %s, and its loot dropped. Bosses beaten: %d.",
-			b.name, paid, p.bossesBeaten())).withStyle(ChatFormatting.GOLD));
+		sp.sendSystemMessage(Component.translatable("[Ultracraft] %s defeated: %s, and its loot dropped. Bosses beaten: %d.",
+			bossName(b), paid, p.bossesBeaten()).withStyle(ChatFormatting.GOLD));
 		UcNet.send(sp, "HUD <color=#FF4343>" + b.name + "</color> DEFEATED. " + paid);
 		// every other V1 who was there takes the same prize
 		for (ServerPlayer o : level.getServer().getPlayerList().getPlayers()) {
@@ -638,7 +657,7 @@ final class UkBosses {
 			UkProgress op = UkProgress.get(o);
 			op.beaten.merge(b.key, 1, Integer::sum);
 			op.award(pay);
-			title(o, Component.literal(b.name).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), Component.literal("DEFEATED   " + paid).withStyle(ChatFormatting.YELLOW), 5, 80, 20);
+			title(o, bossName(b).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), Component.translatable("DEFEATED   %s", paid).withStyle(ChatFormatting.YELLOW), 5, 80, 20);
 			UcNet.send(o, "HUD <color=#FF4343>" + b.name + "</color> DEFEATED. " + paid);
 		}
 		target = null;
@@ -657,14 +676,14 @@ final class UkBosses {
 			p.bossClock = 0;
 			p.nextBoss = interval(sp.getRandom());
 			p.setDirty();
-			title(sp, Component.literal(name).withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD), Component.literal("TOOK YOUR COIN").withStyle(ChatFormatting.GRAY), 5, 70, 20);
-			sp.sendSystemMessage(Component.literal("[Ultracraft] The Ferryman took your coin and let you pass.").withStyle(ChatFormatting.AQUA));
+			title(sp, Component.literal(name).withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD), Component.translatable("TOOK YOUR COIN").withStyle(ChatFormatting.GRAY), 5, 70, 20);
+			sp.sendSystemMessage(Component.translatable("[Ultracraft] The Ferryman took your coin and let you pass.").withStyle(ChatFormatting.AQUA));
 			return;
 		}
 		// it never came: soon again
 		p.nextBoss = p.bossClock + 20 * 60 * 2;
 		p.setDirty();
-		sp.sendSystemMessage(Component.literal("[Ultracraft] " + name + " didn't make it (" + why + ").").withStyle(ChatFormatting.GRAY));
+		sp.sendSystemMessage(Component.translatable("[Ultracraft] %s didn't make it (%s).", name, why).withStyle(ChatFormatting.GRAY));
 	}
 
 	private static void leave(ServerPlayer sp, String why) {
