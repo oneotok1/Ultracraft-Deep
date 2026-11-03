@@ -4,8 +4,8 @@ import json
 import os
 import re
 
-ROOT = 'fabric/src/main/java/dev/ultracraft/'
-LANG = 'fabric/src/main/resources/assets/ultracraft/lang/'
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'fabric/src/main/java/dev/ultracraft/')
+LANG = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'fabric/src/main/resources/assets/ultracraft/lang/')
 
 pat = re.compile(r'Component\.translatable\((\"(?:[^\"\\]|\\.)*\")')
 zh = json.load(open(LANG + 'zh_cn.json', encoding='utf-8-sig'))

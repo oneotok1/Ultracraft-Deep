@@ -4,8 +4,8 @@ import json
 import os
 import re
 
-ROOT = 'fabric/src/main/java/dev/ultracraft/'
-LANG = 'fabric/src/main/resources/assets/ultracraft/lang/'
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'fabric/src/main/java/dev/ultracraft/')
+LANG = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'fabric/src/main/resources/assets/ultracraft/lang/')
 
 plain = re.compile(r'Component\.literal\("((?:[^"\\]|\\.)*)"\)')
 

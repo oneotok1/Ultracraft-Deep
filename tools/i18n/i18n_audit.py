@@ -1,6 +1,11 @@
-import re, glob, json
+import glob
+import json
+import os
+import re
 
-files = glob.glob('fabric/src/main/java/**/*.java', recursive=True)
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
+
+files = glob.glob(os.path.join(ROOT, 'fabric/src/main/java/**/*.java'), recursive=True)
 pat = re.compile(r'Component\.literal\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
 pat_c = re.compile(r'Component\.literal\(\s*"(?:[^"\\]|\\.)*"\s*\+')
 
@@ -22,7 +27,7 @@ print('Component.literal 带拼接(+):', concat)
 print('样例:', samples)
 print()
 
-lang = json.load(open('fabric/src/main/resources/assets/ultracraft/lang/zh_cn.json', encoding='utf-8'))
+lang = json.load(open(os.path.join(ROOT, 'fabric/src/main/resources/assets/ultracraft/lang/zh_cn.json'), encoding='utf-8'))
 hit = [k for k in lang if k in allstr]
 print('zh_cn 键能在代码静态 literal 里精确匹配的:', len(hit), '/', len(lang))
 print('匹配样例:', hit[:8])

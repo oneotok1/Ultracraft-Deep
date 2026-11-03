@@ -1,12 +1,15 @@
 """List Component.translatable keys in source and diff against en_us / zh_cn."""
 import glob
+import os
 import json
 import re
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 
 PAT = re.compile(r'Component\.translatable\(\s*"((?:[^"\\]|\\.)*)"')
 
 keys = set()
-for path in glob.glob('fabric/src/main/java/**/*.java', recursive=True):
+for path in glob.glob(os.path.join(ROOT, 'fabric/src/main/java/**/*.java'), recursive=True):
     src = open(path, encoding='utf-8').read()
     for m in PAT.finditer(src):
         raw = m.group(1)
@@ -14,8 +17,8 @@ for path in glob.glob('fabric/src/main/java/**/*.java', recursive=True):
             raw = raw.encode('utf-8').decode('unicode_escape').encode('latin1').decode('utf-8')
         keys.add(raw)
 
-zh = json.load(open('fabric/src/main/resources/assets/ultracraft/lang/zh_cn.json', encoding='utf-8-sig'))
-en = json.load(open('fabric/src/main/resources/assets/ultracraft/lang/en_us.json', encoding='utf-8-sig'))
+zh = json.load(open(os.path.join(ROOT, 'fabric/src/main/resources/assets/ultracraft/lang/zh_cn.json'), encoding='utf-8-sig'))
+en = json.load(open(os.path.join(ROOT, 'fabric/src/main/resources/assets/ultracraft/lang/en_us.json'), encoding='utf-8-sig'))
 
 # keys written as plain literals that the audit previously recorded as already-translated
 print('source keys:', len(keys), 'zh keys:', len(zh), 'en keys:', len(en))

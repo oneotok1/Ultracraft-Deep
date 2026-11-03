@@ -1,0 +1,28 @@
+1.1.1: the terminal speaks Chinese, Jade names ULTRAKILL's enemies, and entering a world no longer stalls
+
+The terminal's upgrade page is translated: names, effects and the about lines all
+come from a language table keyed by the same strings the page already used, so a
+Minecraft running in English shows exactly what it showed before. Chinese needs a
+font ULTRAKILL does not ship - the shipped font has no CJK glyphs at all - so the
+font pack is a separate download that sits next to the bridge dll. Without it the
+terminal stays English and nothing else changes. zh_cn.json covers the Minecraft
+side, 464 keys, including the settings screen, the boss setup screen and every
+option value that used to be hardcoded English.
+
+Jade shows an ULTRAKILL enemy's real name and its health, read from the enemy
+itself rather than guessed from the Minecraft stand-in, which is what the mob
+damage filter needed in order to list what it was filtering.
+
+Entering a world used to stall for about a second. The stall was the navmesh
+being baked for the first time on the frame the sandbox woke up; it is now baked
+while Minecraft is still loading the world, so the frame that used to pay for it
+is already past. The view is also handed over on the first teleport instead of at
+level preparation, which is what made the window go black before V1 arrived.
+
+The rest is smaller: the arm mesh is only exported while the arms are idle, so a
+punch or a held item no longer bakes its pose into the skin; health caps at four
+times V1's own full health instead of a flat number; the mod's keys get their own
+category instead of sitting in Miscellaneous; the boss intro line names the
+difficulty and the modifiers; fire on your own body actually goes out; and a
+handful of interface strings that were assembled at runtime now resolve to real
+translations.
