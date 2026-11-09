@@ -29,8 +29,6 @@ public final class UltracraftConfig {
 	public static boolean mcMobs = true;
 	/** Using a shop's screen, ULTRAKILL draws at Minecraft's full size, so SmileOS's small text is sharp. */
 	public static boolean sharpShop = true;
-	/** The furthest wave reached in the Cyber Grind. */
-	public static int grindBest = 0;
 	/** ULTRAKILL's bosses come for V1 now and then (with a warning first). */
 	public static boolean bosses = true;
 	/** About how many minutes of play between bosses. */
@@ -98,6 +96,10 @@ public final class UltracraftConfig {
 	public static boolean calmMusic = false;
 	/** Minecraft's own music pauses while ULTRAKILL's fight music plays. */
 	public static boolean hushMcMusic = true;
+	/** ULTRAKILL's fight music also plays in Minecraft's world, for the ULTRAKILL enemies that come out there. Off: only the Cyber Grind and bosses have it. */
+	public static boolean worldMusic = true;
+	/** Fight Music at random: songs left out of the draw (song key -> true). Only used when the pick is random. */
+	public static final Map<String, Boolean> musicMuted = new TreeMap<>();
 	/** Kills at the top style ranks pay extra: experience, loot, and more for a streak of them. */
 	public static boolean styleRewards = true;
 	/** Display the style streak counter above the hotbar on S+ kills; styleStreakTitle enables the title banner every 5th kill. */
@@ -109,8 +111,25 @@ public final class UltracraftConfig {
 	public static boolean grindArenas = true;
 	/** Falling off the Cyber Grind's arenas kills (V1 like a pit, its enemies too), instead of being lifted back. */
 	public static boolean grindVoidDeath = false;
+	/** Split waves: a wave's enemies come in parts instead of all at once (the whole wave pays out once its last part is cleared). Off: every wave comes in one go. */
+	public static boolean grindSubWaves = false;
+	/** The Cyber Grind's looks in a new order each run rather than in ULTRAKILL's own. Off: they come in its order. */
+	public static boolean grindShuffle = true;
+	/** Cyber Grind looks the run may take on, by look index (over its layer's). */
+	public static final Map<String, Boolean> grindLooks = new TreeMap<>();
+	/** Cyber Grind skies the run may pick, by material address (over its layer's). */
+	public static final Map<String, Boolean> grindSkies = new TreeMap<>();
+	/** Cyber Grind layers whose looks and skies are on, by layer name. */
+	public static final Map<String, Boolean> grindLayers = new TreeMap<>();
 	/** Extra Blood Counts as Health Cap: Absorption hearts increase V1's maximum health and can be refilled by fresh blood. Off: absorption acts as a non-refillable shield. */
 	public static boolean absorbCeiling = true;
+	/** Holding the sneak key in midair stops V1 dead (the old ledge rule, which could not tell air from an edge).
+	 * Off: sneak does nothing in the air, as in Minecraft. */
+	public static boolean airSneakHold = false;
+	/** One blue punch parries everything in reach in that frame, not just the first target ULTRAKILL's
+	 * collider order happened to reach (a sawblade and an enemy's parryable blow would otherwise swallow
+	 * each other). Off: ULTRAKILL's own order, one parry per punch. */
+	public static boolean parryEverything = true;
 	/** Mob Damage Filter: defines which Minecraft mobs ULTRAKILL weapons, enemies, Whiplash, and explosions can interact with. Excluded mobs are completely ignored. */
 	public static boolean dmgHostile = true;
 	public static boolean dmgNeutral = true;
@@ -148,19 +167,19 @@ public final class UltracraftConfig {
 	/** Boss Setup (BossSetup): "boss.option" -> value. */
 	public static final Map<String, String> bossSets = new TreeMap<>();
 
-	private static final String[] KEYS = {"v1Height", "autoV1", "ukSpawns", "mcMobs", "sharpShop", "grindBest", "bosses", "bossMinutes", "bossDifficulty", "traitChance", "bossWarnSeconds", "bossIntros", "bossDeaths", "bossArenas",
+	private static final String[] KEYS = {"v1Height", "autoV1", "ukSpawns", "mcMobs", "sharpShop", "bosses", "bossMinutes", "bossDifficulty", "traitChance", "bossWarnSeconds", "bossIntros", "bossDeaths", "bossArenas",
 		"allGear", "playerBlockDamage", "enemyBlockDamage", "blastFireOut", "nukesHitAsMelee", "impactFrames", "launchUltrakill", "opShop", "ukFpsCap", "steveEnemies", "fightMusic", "bossThemes",
-		"calmMusic", "hushMcMusic", "styleRewards", "styleStreakText", "styleStreakTitle", "arenas", "grindArenas", "grindVoidDeath", "lockStep", "lowLatency",
-		"effects", "stainCap", "extraGore", "terrainRange", "ultrakillDir", "setupUltrakill", "teammateMarkers", "absorbCeiling",
+		"calmMusic", "hushMcMusic", "worldMusic", "styleRewards", "styleStreakText", "styleStreakTitle", "arenas", "grindArenas", "grindVoidDeath", "grindSubWaves", "grindShuffle", "lockStep", "lowLatency",
+		"effects", "stainCap", "extraGore", "terrainRange", "ultrakillDir", "setupUltrakill", "teammateMarkers", "absorbCeiling", "airSneakHold", "parryEverything",
 		"dmgHostile", "dmgNeutral", "dmgPassive", "dmgOther"};
 
 	private static final String COMMENT = "Ultracraft (most of this is on the Ultracraft settings screen): v1Height = ULTRAKILL render height (0 = full window, lower = faster);"
 		+ " autoV1 = become V1 automatically; ukSpawns = ULTRAKILL's enemies spawn in the dark; mcMobs = Minecraft's monsters spawn;"
-		+ " sharpShop = full resolution at a shop's screen; grindBest = best Cyber Grind wave; bosses = ULTRAKILL's bosses come now and then;"
+		+ " sharpShop = full resolution at a shop's screen; bosses = ULTRAKILL's bosses come now and then;"
 		+ " bossMinutes = minutes of play between them; bossDifficulty = 0 by bosses beaten, 1-5 EASY to V1 MUST DIE; traitChance = percent of bosses with traits; bossWarnSeconds = warning before one arrives; allGear = every weapon without buying it;"
 		+ " playerBlockDamage / enemyBlockDamage = V1's / enemies' attacks break blocks; blastFireOut = explosions extinguish nearby fire and leave craters unlit; nukesHitAsMelee = V1's explosions count as a fist hit in ULTRAKILL; impactFrames = hitstop length (0.1 to 3);"
 		+ " launchUltrakill = start ULTRAKILL with Minecraft; opShop = upgrades go to 1500%; uk.* = ULTRAKILL settings used while playing Ultracraft;"
-		+ " fightMusic = off, random or a song of ULTRAKILL's soundtrack; cheat.* = cheats on; arenas = ULTRAKILL arenas generate in new chunks; grindArenas = the Cyber Grind runs through its own 50 arenas; lockStep = Minecraft waits for ULTRAKILL's frames; absorbCeiling = absorption hearts raise V1's max health and refill with blood (0: shield only);"
+		+ " fightMusic = off, random or a song of ULTRAKILL's soundtrack; muteSong.<song key> = left out of the random draw; worldMusic = ULTRAKILL's fight music in Minecraft's world too (off: only the Cyber Grind and bosses); cheat.* = cheats on; arenas = ULTRAKILL arenas generate in new chunks; grindArenas = the Cyber Grind runs through its own 50 arenas; lockStep = Minecraft waits for ULTRAKILL's frames; absorbCeiling = absorption hearts raise V1's max health and refill with blood (0: shield only); airSneakHold = the sneak key stops V1 dead in midair (a quirk of the old ledge rule; off: nothing happens, as in Minecraft); parryEverything = one blue punch parries every target in reach that frame (off: ULTRAKILL's own order, one per punch);"
 		+ " styleStreakText = streak count above hotbar, styleStreakTitle = title banner on every 5th kill (both off: hidden);"
 		+ " effects = 2 high, 1 medium, 0 low; stainCap = blood stains kept on blocks (0 none); extraGore = Ultracraft's extra death blood; terrainRange = blocks of terrain sent to ULTRAKILL (64-128);"
 		+ " ultrakillDir = ULTRAKILL's folder, only if Ultracraft can't find it through Steam (it sets up BepInEx and the UltraBridge plugin there); setupUltrakill = you let Ultracraft set ULTRAKILL up (and keep its plugin up to date); teammateMarkers = the other players' names and health over ULTRAKILL's view;"
@@ -206,7 +225,6 @@ public final class UltracraftConfig {
 			ukSpawns = bool(p, "ukSpawns", ukSpawns);
 			mcMobs = bool(p, "mcMobs", mcMobs);
 			sharpShop = bool(p, "sharpShop", sharpShop);
-			grindBest = Integer.parseInt(p.getProperty("grindBest", Integer.toString(grindBest)).trim());
 			bosses = bool(p, "bosses", bosses);
 			bossMinutes = Integer.parseInt(p.getProperty("bossMinutes", Integer.toString(bossMinutes)).trim());
 			bossDifficulty = Math.max(0, Math.min(5, Integer.parseInt(p.getProperty("bossDifficulty", Integer.toString(bossDifficulty)).trim())));
@@ -235,13 +253,18 @@ public final class UltracraftConfig {
 			bossThemes = bool(p, "bossThemes", bossThemes);
 			calmMusic = bool(p, "calmMusic", calmMusic);
 			hushMcMusic = bool(p, "hushMcMusic", hushMcMusic);
+			worldMusic = bool(p, "worldMusic", worldMusic);
 			styleRewards = bool(p, "styleRewards", styleRewards);
 			styleStreakText = bool(p, "styleStreakText", styleStreakText);
 			styleStreakTitle = bool(p, "styleStreakTitle", styleStreakTitle);
 			arenas = bool(p, "arenas", arenas);
 			grindArenas = bool(p, "grindArenas", grindArenas);
 			grindVoidDeath = bool(p, "grindVoidDeath", grindVoidDeath);
+			grindSubWaves = bool(p, "grindSubWaves", grindSubWaves);
+			grindShuffle = bool(p, "grindShuffle", grindShuffle);
 			absorbCeiling = bool(p, "absorbCeiling", absorbCeiling);
+			airSneakHold = bool(p, "airSneakHold", airSneakHold);
+			parryEverything = bool(p, "parryEverything", parryEverything);
 			dmgHostile = bool(p, "dmgHostile", dmgHostile);
 			dmgNeutral = bool(p, "dmgNeutral", dmgNeutral);
 			dmgPassive = bool(p, "dmgPassive", dmgPassive);
@@ -258,6 +281,10 @@ public final class UltracraftConfig {
 				if (k.startsWith("bind.")) ukBinds.put(k.substring(5), Integer.parseInt(p.getProperty(k).trim()));
 				if (k.startsWith("cheat.")) cheats.put(k.substring(6), Boolean.parseBoolean(p.getProperty(k).trim()));
 				if (k.startsWith("dmg.")) dmgMobs.put(k.substring(4), Boolean.parseBoolean(p.getProperty(k).trim()));
+				if (k.startsWith("muteSong.")) musicMuted.put(k.substring(9), Boolean.parseBoolean(p.getProperty(k).trim()));
+				if (k.startsWith("look.")) grindLooks.put(k.substring(5), Boolean.parseBoolean(p.getProperty(k).trim()));
+				if (k.startsWith("sky.")) grindSkies.put(k.substring(4), Boolean.parseBoolean(p.getProperty(k).trim()));
+				if (k.startsWith("layer.")) grindLayers.put(k.substring(6), Boolean.parseBoolean(p.getProperty(k).trim()));
 				if (k.startsWith("bossSong.")) bossSongs.put(k.substring(9), p.getProperty(k).trim());
 				if (k.startsWith("bossIntro.")) bossIntroAlts.put(k.substring(10), p.getProperty(k).trim());
 				// the old shared Encounter setting of a pair of fights: dropped, and the file written back without it
@@ -285,7 +312,6 @@ public final class UltracraftConfig {
 		p.setProperty("ukSpawns", Boolean.toString(ukSpawns));
 		p.setProperty("mcMobs", Boolean.toString(mcMobs));
 		p.setProperty("sharpShop", Boolean.toString(sharpShop));
-		p.setProperty("grindBest", Integer.toString(grindBest));
 		p.setProperty("bosses", Boolean.toString(bosses));
 		p.setProperty("bossMinutes", Integer.toString(bossMinutes));
 		p.setProperty("bossDifficulty", Integer.toString(bossDifficulty));
@@ -311,13 +337,18 @@ public final class UltracraftConfig {
 		p.setProperty("bossThemes", Boolean.toString(bossThemes));
 		p.setProperty("calmMusic", Boolean.toString(calmMusic));
 		p.setProperty("hushMcMusic", Boolean.toString(hushMcMusic));
+		p.setProperty("worldMusic", Boolean.toString(worldMusic));
 		p.setProperty("styleRewards", Boolean.toString(styleRewards));
 		p.setProperty("styleStreakText", Boolean.toString(styleStreakText));
 		p.setProperty("styleStreakTitle", Boolean.toString(styleStreakTitle));
 		p.setProperty("arenas", Boolean.toString(arenas));
 		p.setProperty("grindArenas", Boolean.toString(grindArenas));
 		p.setProperty("grindVoidDeath", Boolean.toString(grindVoidDeath));
+		p.setProperty("grindSubWaves", Boolean.toString(grindSubWaves));
+		p.setProperty("grindShuffle", Boolean.toString(grindShuffle));
 		p.setProperty("absorbCeiling", Boolean.toString(absorbCeiling));
+		p.setProperty("airSneakHold", Boolean.toString(airSneakHold));
+		p.setProperty("parryEverything", Boolean.toString(parryEverything));
 		p.setProperty("dmgHostile", Boolean.toString(dmgHostile));
 		p.setProperty("dmgNeutral", Boolean.toString(dmgNeutral));
 		p.setProperty("dmgPassive", Boolean.toString(dmgPassive));
@@ -330,6 +361,10 @@ public final class UltracraftConfig {
 		p.setProperty("terrainRange", Integer.toString(terrainRange));
 		for (var e : cheats.entrySet()) p.setProperty("cheat." + e.getKey(), Boolean.toString(e.getValue()));
 		for (var e : dmgMobs.entrySet()) p.setProperty("dmg." + e.getKey(), Boolean.toString(e.getValue()));
+		for (var e : musicMuted.entrySet()) p.setProperty("muteSong." + e.getKey(), Boolean.toString(e.getValue()));
+		for (var e : grindLooks.entrySet()) p.setProperty("look." + e.getKey(), Boolean.toString(e.getValue()));
+		for (var e : grindSkies.entrySet()) p.setProperty("sky." + e.getKey(), Boolean.toString(e.getValue()));
+		for (var e : grindLayers.entrySet()) p.setProperty("layer." + e.getKey(), Boolean.toString(e.getValue()));
 		for (var e : bossSongs.entrySet()) p.setProperty("bossSong." + e.getKey(), e.getValue());
 		for (var e : bossIntroAlts.entrySet()) p.setProperty("bossIntro." + e.getKey(), e.getValue());
 		for (var e : bossSets.entrySet()) p.setProperty("bossSet." + e.getKey(), e.getValue());
@@ -368,7 +403,9 @@ public final class UltracraftConfig {
 	public static void sendOpts() {
 		UkLink.send(String.format(Locale.ROOT, "OPTS impact=%.2f fps=%d playerBlocks=%d enemyBlocks=%d lowlat=%d fx=%d gore=%d stains=%d pool=%d nukeMelee=%d", impactFrames, ukFpsNow(),
 			playerBlockDamage ? 1 : 0, enemyBlockDamage ? 1 : 0, lowLatency ? 1 : 0, effects, extraGore ? 1 : 0, stainCap > 0 ? 1 : 0,
-			absorbCeiling ? 1 : 0, nukesHitAsMelee ? 1 : 0));
+			absorbCeiling ? 1 : 0, nukesHitAsMelee ? 1 : 0)
+			+ " airSneakHold=" + (airSneakHold ? 1 : 0)
+			+ " parryEverything=" + (parryEverything ? 1 : 0));
 		BloodStains.setCap(stainCap);
 		for (var e : ukPrefs.entrySet()) UkLink.send("UKPREF " + e.getKey() + " " + e.getValue());
 		for (var e : ukBinds.entrySet()) if (!UcKeybindsScreen.isGun(e.getKey())) UkLink.send("UKBIND " + e.getKey() + " " + e.getValue());
@@ -399,9 +436,24 @@ public final class UltracraftConfig {
 		lowLatency = true;
 	}
 
-	/** The fight music, to ULTRAKILL: MUSICOPTS calm=0/1, MUSIC off|random|song key. */
+	/** The fight music, to ULTRAKILL: MUSICOPTS calm=0/1 world=0/1, MUSICMUTE song;song..., YOURS name\u0001file;...,
+	 * MUSIC off|random|song key. */
 	public static void sendMusic() {
-		UkLink.send("MUSICOPTS calm=" + (calmMusic ? 1 : 0));
+		StringBuilder muted = new StringBuilder();
+		for (var e : musicMuted.entrySet()) {
+			if (!e.getValue()) continue;
+			if (muted.length() > 0) muted.append(';');
+			muted.append(e.getKey());
+		}
+		// the player's own songs, so a random draw can land on one: its name as the picker shows it, and the file
+		StringBuilder own = new StringBuilder();
+		for (String key : UcMusicScreen.own()) {
+			if (own.length() > 0) own.append(';');
+			own.append(key).append('\u0001').append(UcMusicScreen.wire(key));
+		}
+		UkLink.send("MUSICOPTS calm=" + (calmMusic ? 1 : 0) + " world=" + (worldMusic ? 1 : 0));
+		UkLink.send("MUSICMUTE " + muted);
+		UkLink.send("YOURS " + own);
 		UkLink.send("MUSIC " + UcMusicScreen.wire(fightMusic));
 	}
 }

@@ -74,17 +74,26 @@ public final class MobDamageRules {
             "minecraft:wolf", "minecraft:enderman", "minecraft:iron_golem", "minecraft:polar_bear",
             "minecraft:bee", "minecraft:zombified_piglin"));
 
+    /** Mobs the game files under {@code MISC}: no less a mob than a zombie is, they just do not count
+     * towards the mob cap. Kept by name because a type that will not build says nothing about what it
+     * is, and reading its category alone would strike it off the list entirely. */
+    private static final Set<String> MISC_MOBS = new HashSet<>(Set.of(
+            "minecraft:villager", "minecraft:wandering_trader", "minecraft:iron_golem",
+            "minecraft:snow_golem", "minecraft:ender_dragon", "minecraft:giant"));
+
     /** One throwaway mob of this type, to ask it what it is; null if it cannot be built. */
     private static Entity sample(EntityType<?> type) {
         if (SAMPLES.containsKey(type)) return SAMPLES.get(type);
         Entity made = null;
+        var level = Minecraft.getInstance().level;
         try {
-            var level = Minecraft.getInstance().level;
             if (level != null) made = type.create(level, EntitySpawnReason.COMMAND);
         } catch (Throwable ignored) {
             // a type that will not build (a mod's, or one that needs a real server): the category answers instead
         }
-        SAMPLES.put(type, made);
+        // without a world nothing can be built, so the answer is no answer at all: keep it only to save
+        // the work, and let the next look with a world in hand ask again
+        if (made != null || level != null) SAMPLES.put(type, made);
         return made;
     }
 
@@ -92,7 +101,8 @@ public final class MobDamageRules {
         Boolean known = TYPE_IS_MOB.get(type);
         if (known != null) return known;
         Entity made = sample(type);
-        boolean mob = made != null ? made instanceof Mob : type.getCategory() != MobCategory.MISC;
+        boolean mob = made != null ? made instanceof Mob
+                : type.getCategory() != MobCategory.MISC || MISC_MOBS.contains(key(type));
         TYPE_IS_MOB.put(type, mob);
         return mob;
     }
@@ -110,7 +120,7 @@ public final class MobDamageRules {
             String key = id == null ? "" : id.toString();
             cat = NEUTRAL_IDS.contains(key) ? NEUTRAL
                     : type.getCategory() == MobCategory.MONSTER ? HOSTILE
-                    : type.getCategory() == MobCategory.MISC ? OTHER : PASSIVE;
+                    : type.getCategory() == MobCategory.MISC && !MISC_MOBS.contains(key) ? OTHER : PASSIVE;
         }
         TYPE_CATEGORY.put(type, cat);
         return cat;

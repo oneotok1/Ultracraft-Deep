@@ -134,4 +134,12 @@ final class UcMusicScreen extends OptionsSubScreen {
 	static String current() {
 		return name(UltracraftConfig.fightMusic);
 	}
+
+	/** Back to the settings page as a new page: the button that opened this one names the song, and a page that is
+	 * only shown again keeps the name it was built with. */
+	@Override
+	public void onClose() {
+		if (lastScreen instanceof UcSettingsScreen.Category c) c.reopen();
+		else minecraft.setScreen(lastScreen);
+	}
 }

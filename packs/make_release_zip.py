@@ -10,7 +10,16 @@ import sys
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-JAR = os.path.join(ROOT, 'fabric', 'build', '1.21.11', 'libs', 'ultracraft-1.1.1+1.21.11.jar')
+def version():
+    with open(os.path.join(ROOT, 'fabric', 'gradle.properties'), encoding='utf-8') as f:
+        for line in f:
+            if line.startswith('version='):
+                return line.split('=', 1)[1].strip()
+    sys.exit('no version in fabric/gradle.properties')
+
+
+JAR = os.path.join(ROOT, 'fabric', 'build', '1.21.11', 'libs',
+                   'ultracraft-' + version() + '+1.21.11.jar')
 DLL = os.path.join(ROOT, 'ultrabridge', 'bin', 'Release', 'net472', 'UltraBridge.dll')
 OUT = os.path.join(ROOT, 'dist', 'Ultracraft.zip')
 

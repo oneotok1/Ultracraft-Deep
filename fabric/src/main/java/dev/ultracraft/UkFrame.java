@@ -2,19 +2,26 @@ package dev.ultracraft;
 
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.platform.DepthTestFunction;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.GpuDevice;
+import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.textures.TextureFormat;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import java.io.RandomAccessFile;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.util.OptionalInt;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.render.TextureSetup;
 import net.minecraft.client.gui.render.state.BlitRenderState;
@@ -48,6 +55,28 @@ public final class UkFrame {
 	/** RGB from Sampler0; coverage (and, for an RGBA mask, added light) from Sampler1; flipped by the UVs. */
 	public static final RenderPipeline COMPOSITE = pipeline("v1_composite", false);
 	public static final RenderPipeline COMPOSITE_RGBA_MASK = pipeline("v1_composite_rgba_mask", true);
+
+	/**
+	 * The same composition as a full-screen triangle drawn into Minecraft's own target, for the pass that runs before
+	 * the hand: no vertex buffer, no transform uniforms, just gl_VertexID (as the vanilla post-processing passes do).
+	 */
+	private static RenderPipeline worldPipeline(String name, boolean rgbaMask) {
+		RenderPipeline.Builder b = RenderPipeline.builder()
+			.withLocation(Identifier.fromNamespaceAndPath("ultracraft", "pipeline/" + name))
+			.withVertexShader(Identifier.fromNamespaceAndPath("ultracraft", "core/v1_world"))
+			.withFragmentShader(Identifier.fromNamespaceAndPath("ultracraft", "core/v1_world"))
+			.withSampler("Sampler1")
+			.withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+			.withDepthWrite(false)
+			.withVertexFormat(DefaultVertexFormat.EMPTY, VertexFormat.Mode.TRIANGLES);
+		// the builder starts with no blending at all, unlike the GUI snippet the overlay version borrows
+		if (rgbaMask) b = b.withShaderDefine("MASK_RGBA").withBlend(BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA);
+		else b = b.withBlend(BlendFunction.TRANSLUCENT);
+		return b.build();
+	}
+
+	public static final RenderPipeline WORLD = worldPipeline("v1_world", false);
+	public static final RenderPipeline WORLD_RGBA_MASK = worldPipeline("v1_world_rgba_mask", true);
 
 	private static MappedByteBuffer map;
 	private static GpuTexture color, mask;
@@ -309,5 +338,25 @@ public final class UkFrame {
 		RenderPipeline pipe = texMaskBpp == 1 ? COMPOSITE : COMPOSITE_RGBA_MASK;
 		// rows arrive bottom-up from Unity: v runs 1 -> 0 to flip on the GPU
 		ctx.guiRenderState.submitGuiElement(new BlitRenderState(pipe, ts, new Matrix3x2f(ctx.pose()), 0, 0, w, h, 0f, 1f, 1f, 0f, -1, null));
+	}
+
+	/**
+	 * Draw the V1 layer straight into the main target, from inside the world pass: everything ULTRAKILL shows over
+	 * Minecraft's world lands there, and whatever Minecraft draws afterwards - its own hand, then the HUD - covers it.
+	 * Called once a frame, before the hand, when there is a frame to show.
+	 */
+	public static void drawWorld() {
+		if (color == null) return;
+		RenderTarget target = Minecraft.getInstance().getMainRenderTarget();
+		if (target == null) return;
+		GpuSampler sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
+		RenderPipeline pipe = texMaskBpp == 1 ? WORLD : WORLD_RGBA_MASK;
+		try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder()
+			.createRenderPass(() -> "ultracraft v1 layer", target.getColorTextureView(), OptionalInt.empty())) {
+			pass.setPipeline(pipe);
+			pass.bindTexture("Sampler0", colorView, sampler);
+			pass.bindTexture("Sampler1", maskView, sampler);
+			pass.draw(0, 3);
+		}
 	}
 }

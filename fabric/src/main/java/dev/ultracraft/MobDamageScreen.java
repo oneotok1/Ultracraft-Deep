@@ -7,6 +7,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -32,6 +33,8 @@ public final class MobDamageScreen extends Screen {
     private static final int GAP = 6;
     private static final int TOP = 96;
     private static final int BOTTOM = 52;
+    private static final int BAR_W = 6;
+    private static final int BAR_GAP = 6;
 
     private final Screen last;
     private final List<EntityType<?>> all = MobDamageRules.mobs();
@@ -42,6 +45,43 @@ public final class MobDamageScreen extends Screen {
     private String query = "";
     private int chip = -1;
     private int scroll;
+    /** Dragging the scrollbar: where in the slider the pointer took hold. */
+    private boolean dragging;
+    private int grab;
+
+    /** How many buttons fit across at the full width. */
+    private int fullColumns() {
+        return Math.max(1, (width - 40 + GAP) / (BUTTON_W + GAP));
+    }
+
+    /** The pages on screen at once. */
+    private int pageHeight() {
+        return Math.max(1, (height - TOP - BOTTOM) / ROW);
+    }
+
+    /** Whether there is more list than screen: only then is there anything to drag. */
+    private boolean needsBar() {
+        int columns = fullColumns();
+        return (shown.size() + columns - 1) / columns > pageHeight();
+    }
+
+    /** How many buttons fit across, less room for the scrollbar when the list is long enough to need one. */
+    private int columns() {
+        int room = width - 40;
+        if (needsBar()) room -= BAR_GAP + BAR_W;
+        return Math.max(1, (room + GAP) / (BUTTON_W + GAP));
+    }
+
+    /** The pages the list takes: one, when everything fits. */
+    private int pages() {
+        int columns = columns();
+        return Math.max(1, (shown.size() + columns - 1) / columns);
+    }
+
+    /** Where the bar sits: down the right edge, clear of the grid. */
+    private int barX() {
+        return width - 20 - BAR_W;
+    }
 
     public MobDamageScreen(Screen last) {
         super(Component.translatable("Mob Damage Filter"));
@@ -94,9 +134,9 @@ public final class MobDamageScreen extends Screen {
             x += 98;
         }
 
-        int columns = Math.max(1, (width - 40 + GAP) / (BUTTON_W + GAP));
-        int rows = Math.max(1, (height - TOP - BOTTOM) / ROW);
-        int total = (shown.size() + columns - 1) / columns;
+        int columns = columns();
+        int rows = pageHeight();
+        int total = pages();
         scroll = Math.max(0, Math.min(scroll, Math.max(0, total - rows)));
         for (int r = scroll; r < Math.min(total, scroll + rows); r++) {
             for (int c = 0; c < columns; c++) {
@@ -226,14 +266,98 @@ public final class MobDamageScreen extends Screen {
         String tally = shown.size() + " shown  -  " + allowed + "/" + all.size() + " allowed";
         graphics.drawString(font, tally, width - 20 - font.width(tally), height - 58, 0xFFA0A0A0);
         super.render(graphics, mouseX, mouseY, partialTick);
+        scrollbar(graphics);
+    }
+
+    /** The bar's track, top and length. */
+    private int barTop() {
+        return TOP;
+    }
+
+    private int barHeight() {
+        return pageHeight() * ROW - 2;
+    }
+
+    /** The slider's height inside the track: a screenful's share of the whole list. */
+    private int thumbHeight() {
+        return Math.max(20, barHeight() * pageHeight() / pages());
+    }
+
+    /** The slider's top edge, where the list is scrolled to. */
+    private int thumbTop() {
+        int travel = barHeight() - thumbHeight();
+        return barTop() + (int) ((long) travel * scroll / Math.max(1, pages() - pageHeight()));
+    }
+
+    /** Scrolls to wherever the slider's top edge is put. */
+    private void scrollTo(int thumbTop) {
+        int travel = barHeight() - thumbHeight();
+        if (travel <= 0) {
+            scroll = 0;
+            return;
+        }
+        int most = Math.max(0, pages() - pageHeight());
+        scroll = Math.max(0, Math.min(most, (int) Math.round((double) (thumbTop - barTop()) * most / travel)));
+    }
+
+    /** A bar down the right edge, only while the list is longer than the screen it is drawn on. */
+    private void scrollbar(GuiGraphics graphics) {
+        if (!needsBar()) return;
+        int x = barX();
+        int top = barTop();
+        graphics.fill(x, top, x + BAR_W, top + barHeight(), 0xFF202020);
+        int y = thumbTop();
+        graphics.fill(x, y, x + BAR_W, y + thumbHeight(), 0xFFB0B0B0);
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent e, boolean doubleClick) {
+        double mouseX = e.x(), mouseY = e.y();
+        if (e.button() == 0 && needsBar()) {
+            int x = barX();
+            // wider than the bar itself, so it can be caught without aiming
+            if (mouseX >= x - 4 && mouseX <= x + BAR_W + 4 && mouseY >= barTop() && mouseY <= barTop() + barHeight()) {
+                int thumb = thumbTop();
+                int height = thumbHeight();
+                if (mouseY >= thumb && mouseY <= thumb + height) {
+                    grab = (int) mouseY - thumb;
+                } else {
+                    // pressed the track: jump there, then carry on dragging from the middle of the slider
+                    grab = height / 2;
+                    scrollTo((int) mouseY - grab);
+                    rebuildLater();
+                }
+                dragging = true;
+                return true;
+            }
+        }
+        return super.mouseClicked(e, doubleClick);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent e, double dragX, double dragY) {
+        if (dragging) {
+            scrollTo((int) e.y() - grab);
+            rebuildLater();
+            return true;
+        }
+        return super.mouseDragged(e, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent e) {
+        if (dragging) {
+            dragging = false;
+            return true;
+        }
+        return super.mouseReleased(e);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (scrollY != 0) {
-            int columns = Math.max(1, (width - 40 + GAP) / (BUTTON_W + GAP));
-            int rows = Math.max(1, (height - TOP - BOTTOM) / ROW);
-            int total = (shown.size() + columns - 1) / columns;
+            int rows = pageHeight();
+            int total = pages();
             int before = scroll;
             scroll = Math.max(0, Math.min(scroll - (int) Math.signum(scrollY), Math.max(0, total - rows)));
             if (scroll != before) rebuildLater();

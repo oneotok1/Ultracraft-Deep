@@ -16,6 +16,8 @@
 | `i18n_cov.py` | 还剩几处纯字面量 `Component.literal("...")`，`zh_cn.json` 覆盖了没有 |
 | `i18n_audit.py` | 纯字面量与拼接串（`+`）各多少，列出样本 |
 | `i18n_audit2.py` | 源码里所有字符串字面量，哪些在 `zh_cn.json` 里找得到对应译文 |
+| `cs_scan.py` | C# 桥接侧（`ultrabridge/*.cs`）有多少含中文的字符串字面量，按文件分布 |
+| `cs_dump.py` | 逐条列出 C# 侧的中文字面量与行号，跳过已在总览第六节登记过的 `UpgradesZh.cs` |
 
 `i18n_gap.py` / `i18n_keys.py` 会把 `"boss.ultracraft." + b.key()` 这种拼接前缀
 当成完整键报为缺失，那是假阳性——实际键在运行期才拼出来，语言文件里是齐全的。

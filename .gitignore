@@ -21,3 +21,4 @@ dist/
 docs/*.png
 docs/*.webp
 /prodtest*/
+tmp-zip-out.txt

@@ -21,6 +21,18 @@ namespace UltraBridge
         /// blast the way it falls to a punch). Off: they arrive as explosions.</summary>
         public static bool NukesHitAsMelee = true;
 
+        /// <summary>Holding the sneak key in midair stops V1 dead: the horizontal speed is taken away and the body
+        /// stays where it is until the key is let go. Off by default - it reads as a bug the first time it happens,
+        /// because nothing in Minecraft stops a falling player. On: the sneak's ledge rule as it was before, which
+        /// cannot tell a body in the air from one stepping off a block.</summary>
+        public static bool AirSneakHold;
+
+        /// <summary>One blue punch parries everything it can reach in that frame, rather than the first thing it
+        /// happened to touch. ULTRAKILL stops at the first target (Punch.cs:549-560), and the order it walks the
+        /// colliders in is not defined, so a sawblade and an enemy's parryable blow in the same frame would take
+        /// turns swallowing each other. On by default: it is what the parry is for.</summary>
+        public static bool ParryEverything = true;
+
         /// <summary>Impact frames (TimeController.HitStop/TrueStop) last this many times as long.</summary>
         public static float ImpactScale = 1f;
 
@@ -34,7 +46,7 @@ namespace UltraBridge
         {
             new[] { "difficulty", "i" }, new[] { "mouseSensitivity", "fl" }, new[] { "fieldOfView", "f" }, new[] { "screenShake", "f" }, new[] { "cameraTilt", "b" },
             new[] { "parryFlash", "b" }, new[] { "weaponHoldPosition", "i" }, new[] { "mouseReverseY", "b" }, new[] { "bloodEnabled", "bl" },
-            new[] { "allVolume", "f" }, new[] { "musicVolume", "f" },
+            new[] { "allVolume", "f" }, new[] { "musicVolume", "f" }, new[] { "outlineThickness", "i" },
         };
 
         void HandleSettings(string cmd, string rest)
@@ -56,6 +68,8 @@ namespace UltraBridge
                         if (p[0] == "stains") SetStains(p[1] == "1");
                         if (p[0] == "pool") Bridge.PoolCeiling = p[1] == "1";
                         if (p[0] == "nukeMelee") NukesHitAsMelee = p[1] == "1";
+                        if (p[0] == "airSneakHold") AirSneakHold = p[1] == "1";
+                        if (p[0] == "parryEverything") ParryEverything = p[1] == "1";
                     }
                     break;
                 case "VIEW":
@@ -130,6 +144,9 @@ namespace UltraBridge
                     break;
                 case "MUSIC":
                 case "MUSICOPTS":
+                case "MUSICMUTE":
+                case "GRINDMUSIC":
+                case "YOURS":
                 case "THEME":
                     HandleMusic(cmd, rest);
                     break;

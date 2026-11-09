@@ -136,6 +136,22 @@ namespace UltraBridge
                     foreach (var t in UcUp.Values) { t.level = 1; t.bought = 1; }
                     gearKnown = false;
                     HandleSky("-");
+                    mcInWorld = false;
+                    // out of the world the run is over too: its music stops with it (a bridge restart in the
+                    // middle of a run never gets the GRINDMUSIC 0 that would have ended it)
+                    HandleMusic("GRINDMUSIC", "0");
+                    // and the run's own enemies go with it. Their EnemyIdentifiers outlive the world (ULTRAKILL stays
+                    // on its menu scene), and while any of them counts as alive the music is asked for again a few
+                    // times a second - which put it back the moment it had been stopped.
+                    ClearWorldEnemies();
+                    ClearGrind();
+                    grindRunning = false;
+                    grindIn = false;
+                    // and ULTRAKILL's own "a level's fight is on": the Cyber Grind sets it as it opens (ArenaMusicStart)
+                    // and nothing in Minecraft's world clears it again, so InFight kept saying yes after the music
+                    // had been stopped - and it was started again a few times a second
+                    var mmOut = MonoSingleton<MusicManager>.Instance;
+                    if (mmOut != null) mmOut.ArenaMusicEnd();
                     if (levelPrepared) RefreshLoadout();
                     UpgradeTexts();
                     // and the position sync starts over with it. ULTRAKILL stays on its menu scene, where V1 still

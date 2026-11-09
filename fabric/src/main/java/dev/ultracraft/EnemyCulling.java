@@ -23,20 +23,33 @@ final class EnemyCulling {
 	private static String sent = "";
 	private static int ticks;
 
+	// kept between runs: this goes over every enemy every 4 ticks, and a fresh set, array and string per enemy was
+	// the whole cost of the pass. The tree is what makes the message ordered the same way twice, so it stays a tree.
+	private static final Set<String> hidden = new TreeSet<>();
+	private static final StringBuilder line = new StringBuilder("HIDE ");
+	private static final Vec3[] points = new Vec3[5];
+
 	private EnemyCulling() {}
 
 	static void tick(Minecraft mc, LocalPlayer p) {
 		ClientLevel level = mc.level;
 		if (level == null || ++ticks % 4 != 0) return;
 		Vec3 eye = p.getEyePosition();
-		Set<String> hidden = new TreeSet<>();
+		hidden.clear();
 		for (Lighting.Spot s : Lighting.enemySpots()) {
 			Vec3 c = new Vec3(s.x(), s.y(), s.z());
 			double d = c.distanceTo(eye);
 			if (d < NEAR || d > FAR) continue;
 			if (!seen(level, p, eye, c, s.w(), s.h())) hidden.add(s.id());
 		}
-		String msg = "HIDE " + String.join(",", hidden);
+		line.setLength(5);
+		boolean first = true;
+		for (String id : hidden) {
+			if (!first) line.append(',');
+			first = false;
+			line.append(id);
+		}
+		String msg = line.toString();
 		// when it changes, and now and then (ULTRAKILL may have missed one, or reconnected)
 		if (!msg.equals(sent) || ticks % 40 == 0) {
 			sent = msg;
@@ -53,7 +66,11 @@ final class EnemyCulling {
 		Vec3 to = c.subtract(eye);
 		Vec3 side = new Vec3(-to.z, 0, to.x);
 		side = side.lengthSqr() > 1e-6 ? side.normalize().scale(w * 0.5) : Vec3.ZERO;
-		Vec3[] points = {c, c.add(0, h * 0.45, 0), c.add(0, -h * 0.4, 0), c.add(side), c.subtract(side)};
+		points[0] = c;
+		points[1] = c.add(0, h * 0.45, 0);
+		points[2] = c.add(0, -h * 0.4, 0);
+		points[3] = c.add(side);
+		points[4] = c.subtract(side);
 		for (Vec3 pt : points) if (clear(level, p, eye, pt)) return true;
 		return false;
 	}

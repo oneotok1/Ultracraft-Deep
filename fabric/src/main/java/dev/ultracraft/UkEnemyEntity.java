@@ -37,6 +37,8 @@ public class UkEnemyEntity extends PathfinderMob implements Enemy {
 	// through getHealth(), on the scale in UK_TO_MC. The max goes through Minecraft's own synced MAX_HEALTH
 	// attribute (getMaxHealth() is final and reads exactly that attribute).
 	private static final EntityDataAccessor<Float> UK_HP = SynchedEntityData.defineId(UkEnemyEntity.class, EntityDataSerializers.FLOAT);
+	/** One of a Grind wave's last three: marked through walls, so the end of a wave is not a search. */
+	private static final EntityDataAccessor<Boolean> LAST_FEW = SynchedEntityData.defineId(UkEnemyEntity.class, EntityDataSerializers.BOOLEAN);
 	/**
 	 * One point of ULTRAKILL health, in Minecraft health points. ULTRAKILL's mooks sit in the low single digits
 	 * (a Filth is 2, a Soldier around 5), so a 1:1 reading would paint every one of them as a sliver of a heart
@@ -71,6 +73,16 @@ public class UkEnemyEntity extends PathfinderMob implements Enemy {
 		builder.define(ANIM, 0);
 		builder.define(DEAD, false);
 		builder.define(UK_HP, -1f);
+		builder.define(LAST_FEW, false);
+	}
+
+	/** Whether this is one of the wave's last three, marked through walls. */
+	public boolean lastFew() {
+		return entityData.get(LAST_FEW);
+	}
+
+	public void setLastFew(boolean on) {
+		if (entityData.get(LAST_FEW) != on) entityData.set(LAST_FEW, on);
 	}
 
 	/** From the owner's ULTRAKILL (UKE): what it is, which way it faces, what it's playing. */

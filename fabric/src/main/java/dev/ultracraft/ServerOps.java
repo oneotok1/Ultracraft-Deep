@@ -230,6 +230,11 @@ public final class ServerOps {
 		justJoined.put(sp.getUUID(), ticks + 20);
 	}
 
+	/** The server tick counter, for anything that has to wait a moment before it happens. */
+	static int ticks() {
+		return ticks;
+	}
+
 	/** Every server tick: each V1's spawns, bosses and Cyber Grind. */
 	static void tick(MinecraftServer server) {
 		ticks++;
@@ -248,6 +253,7 @@ public final class ServerOps {
 		landWhipped();
 		if (!RELEASED_WHIP.isEmpty()) RELEASED_WHIP.entrySet().removeIf(en -> ticks >= en.getValue() || en.getKey().isRemoved());
 		if (ticks % 10 == 0) guard("boss party", () -> BossParty.tick(server));
+		guard("cyber grind heals", CyberGrind::flushHeals);
 		guard("duels", () -> Duels.tick(server));
 		for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
 			State s = state(sp);

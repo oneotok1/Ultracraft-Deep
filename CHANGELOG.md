@@ -3,6 +3,19 @@
 Every released version of Ultracraft, newest first. Each heading links to that
 release on GitHub; the current download lives on the [latest release](https://github.com/oneotok1/Ultracraft-Deep/releases/latest).
 
+## [1.1.2](https://github.com/oneotok1/Ultracraft-Deep/releases/tag/v1.1.2) — 2026-11-08
+
+- **Calm music is the Cyber Grind's alone.** A run opens on the track's battle version and drops to the calm one between waves (*Cyber Grind Calm Music*).
+- **Music filter.** A new *Music Filter* page decides song by song which ones may come up in the random draw. Whether ULTRAKILL's fight music plays in Minecraft's world is a separate switch.
+- **Start the Cyber Grind mid-run.** `/uc grind wave <n>` jumps to a wave; without cheats it only reaches as far as your best.
+- **Waves can come in batches.** At higher waves the enemies arrive in a few batches instead of all at once (off by default, slightly raises the total).
+- **Filter the arena's looks and skies.** Two new pages toggle each of the 13 layers and 46 skies; the Grind's terrain now changes in a random order.
+- **The last three enemies are marked.** With three left in a wave a marker appears, so the last ones are not lost.
+- **Enemy silhouettes drawn by Minecraft.** Enemy outlines drawn Minecraft's way, close to ULTRAKILL's own minor assist.
+- **V1 can sneak.** A new sneak key, which makes building as V1 a good deal easier.
+- **One blue punch parries everything in reach.** Every parryable thing it can reach that frame goes off together (switchable, on by default).
+- **A round of interface and logic fixes.**
+
 ## [1.1.1](https://github.com/oneotok1/Ultracraft-Deep/releases/tag/v1.1.1) — 2026-11-03
 
 - **Mobs with spears flash yellow.** Spear-wielding mobs (zombies, piglins, and zombified piglins) now flash yellow before thrusting. The parry window opens at the spear's full attack reach rather than close punching distance.

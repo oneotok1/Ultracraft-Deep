@@ -48,10 +48,18 @@ public final class UcThemes {
 	/** ULTRAKILL's fight music is playing (a fight is on and a song is chosen). */
 	static volatile boolean fightMusic;
 
+	/** The last theme the server asked for ("boss:v2 arena:limbo", or "-"), and the last fight state: what the
+	 * settings below have to re-apply when they change mid-fight. */
+	private static String lastTheme;
+	private static boolean lastFight;
+	/** A theme of its own is really sounding (not taken away by Boss Themes, nor by the boss's own Off pick). */
+	private static boolean themePlaying;
+
 	private UcThemes() {}
 
 	/** C:THEME [boss:key] [arena:layer] | -: the boss's own song first, else its arena's layer's. */
 	static void theme(String what) {
+		lastTheme = what;
 		String song = null;
 		for (String w : what.split(" ")) {
 			if (song == null && w.startsWith("boss:")) {
@@ -59,6 +67,7 @@ public final class UcThemes {
 				String key = w.substring(5), pick = UltracraftConfig.bossSongs.getOrDefault(key, "default");
 				if (pick.equals("off")) {
 					UkLink.send("THEME -");
+					themePlaying = false;
 					return;
 				}
 				song = pick.equals("default") ? BOSSES.get(key) : pick;
@@ -68,17 +77,39 @@ public final class UcThemes {
 		if (song == null || !UltracraftConfig.bossThemes) {
 			// no theme of its own: the fight music as chosen
 			UkLink.send("THEME -");
+			themePlaying = false;
 			return;
 		}
 		UkLink.send("THEME " + UcMusicScreen.wire(song));
+		themePlaying = true;
 		// a theme plays even with fight music off
 		fightMusic = true;
 	}
 
 	/** FIGHT 1/0 from ULTRAKILL. */
 	static void fight(Minecraft mc, boolean on) {
-		fightMusic = on && !UltracraftConfig.fightMusic.equals("off");
+		lastFight = on;
+		// a boss's or an arena's own song counts as fight music here: it plays with the fight music off, and
+		// Minecraft's must still give way to it
+		fightMusic = on && (themePlaying || !UltracraftConfig.fightMusic.equals("off"));
 		if (fightMusic && UltracraftConfig.hushMcMusic) mc.getMusicManager().stopPlaying();
+	}
+
+	/** Boss Themes changed: the theme of the fight in progress is applied again, or taken away, now. */
+	static void retune() {
+		if (!lastFight || lastTheme == null || lastTheme.equals("-")) return;
+		// re-picks with the new setting: THEME song, or THEME - when it is off
+		theme(lastTheme);
+		fightMusic = themePlaying || !UltracraftConfig.fightMusic.equals("off");
+	}
+
+	/** Hush Minecraft's Music changed: the fight in progress starts hushing now, instead of at the next one. */
+	static void refight() {
+		if (!lastFight) return;
+		fightMusic = themePlaying || !UltracraftConfig.fightMusic.equals("off");
+		if (!fightMusic || !UltracraftConfig.hushMcMusic) return;
+		Minecraft mc = Minecraft.getInstance();
+		if (mc != null) mc.getMusicManager().stopPlaying();
 	}
 
 	/** Minecraft's music waits while ULTRAKILL's plays (MusicManagerMixin). */

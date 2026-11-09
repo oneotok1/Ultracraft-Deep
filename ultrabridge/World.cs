@@ -454,7 +454,9 @@ namespace UltraBridge
             shopTouch = false;
             shopNear = false;
             cutoutMats.Clear();
-            grindEnemies.Clear();
+            // the run's enemies go with the world they stood in: clearing the map alone left them in the scene, and
+            // the next run (or a walk out to Minecraft and back) found the last one's enemies still standing there
+            ClearGrind();
             stainPos.Clear();
             stainNorm.Clear();
             bosses.Clear();
@@ -462,6 +464,9 @@ namespace UltraBridge
             ForgetOutros();
             altButtons.Clear();
             styleSeen = -1;
+            // the pads stand in the scene, not in the list: clearing the list alone left them behind, and a run
+            // that ended in the main menu (this path) came back to find ULTRAKILL's pads floating in Minecraft's
+            foreach (var go in jumpPads) if (go != null) Destroy(go);
             jumpPads.Clear();
             padsWere = "";
             padPrefab = null;
@@ -598,21 +603,34 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
 
         // after a teleport V1 waits where it was put until there is ground under it: Minecraft's blocks around a new
         // spot (or around a new origin) arrive over a few frames, and V1 must not drop through terrain that isn't built
-        // yet and fall forever
+        // yet and fall forever. The hold ends as soon as the terrain under it has been built, or after a short grace
+        // period. It used to end only when a downward ray found ground, which kept V1 frozen in mid-air for as long as
+        // the sections took to arrive - that wait is what made the handover to V1 feel stuck for a second or two.
         float tpHoldUntil;
         Vector3 tpHoldAt;
+        int tpHoldSections;
+        Vector3 lastTpAt;
 
         void HoldAfterTeleport(Vector3 at)
         {
+            // Minecraft sends its position every tick, not only when a teleport happens: re-arming the hold on each
+            // of those left V1 pinned where it stood, because every message pushed the deadline out again. Only a
+            // jump too far to be walked is a teleport worth waiting for.
+            bool jumped = (at - lastTpAt).sqrMagnitude > 64f;
+            lastTpAt = at;
+            if (!jumped) return;
             tpHoldAt = at;
-            tpHoldUntil = Time.unscaledTime + 4f;
+            tpHoldUntil = Time.unscaledTime + 0.6f;
+            tpHoldSections = sections.Count;
         }
 
         void KeepTeleportHold(NewMovement nm)
         {
             if (tpHoldUntil <= 0f) return;
-            bool ground = Physics.Raycast(tpHoldAt, Vector3.down, 64f * K, LayerMaskDefaults.Get(LMD.Environment), QueryTriggerInteraction.Ignore);
-            if (ground || driving || nm.dead || Time.unscaledTime > tpHoldUntil)
+            // the sections that cover the landing spot decide it, not the whole set: a world-wide rebase streams
+            // terrain in for a while and V1 has no business waiting for the far side of it
+            bool built = sections.Count != tpHoldSections && GroundBuilt(tpHoldAt);
+            if (built || driving || nm.dead || Time.unscaledTime > tpHoldUntil)
             {
                 tpHoldUntil = 0f;
                 return;
@@ -621,6 +639,22 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
             nm.rb.position = tpHoldAt;
             nm.rb.velocity = Vector3.zero;
             fallPeak = tpHoldAt.y;
+        }
+
+        /// <summary>Whether a built section stands under this point, rather than the ray happening to find nothing
+        /// because the ground it should hit is still queued.</summary>
+        bool GroundBuilt(Vector3 at)
+        {
+            foreach (var kv in sections)
+            {
+                var go = kv.Value;
+                if (go == null) continue;
+                var mc = go.GetComponent<MeshCollider>();
+                if (mc == null || mc.sharedMesh == null) continue;
+                if (!mc.bounds.Contains(at)) continue;
+                if (mc.bounds.min.y <= at.y + 0.5f) return true;
+            }
+            return false;
         }
 
         void UpdateWorldExtras(NewMovement nm)
@@ -1081,6 +1115,9 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
         float shopScale;      // the root's scale as placed (ULTRAKILL's own, unless that wouldn't fit)
         bool shopFailed, shopTouch, shopNear;
         bool grindRunning, grindIn, spawnsOn = true;
+        // Minecraft's world is there: the Sandbox outlives it (it stays on its menu scene, its enemies still
+        // standing), so "an enemy is alive" alone does not mean a fight is on. TP marks a world in, WORLDRESET out.
+        bool mcInWorld;
         int grindWave, grindBest;
         readonly Dictionary<string, GameObject> shops = new Dictionary<string, GameObject>();
         static readonly AccessTools.FieldRef<ScreenZone, bool> ZoneTouch = AccessTools.FieldRefAccess<ScreenZone, bool>("touchMode");
@@ -1447,6 +1484,8 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
                 var tip = zone.tipOfTheDay;
                 zone.tipOfTheDay = null;
                 tip.text = NextTip();
+                // the tip hangs outside Main Panel, so ShopTexts' own font pass never reaches it
+                ApplyShopFont(tip.transform);
             }
             var main = go.transform.Find("Canvas/Background/Main Panel");
             if (main == null) return;
@@ -1544,7 +1583,7 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
             "Explosions, wind charges and <color=#FF4343>Riptide</color> throw V1 around.\n\nSo does a zombie's punch.",
             "The higher your <color=#FF4343>style rank</color>, the more <color=#FF4343>experience</color> a kill drops.",
             "Minecraft's mobs <color=#FF4343>bleed</color> like anything else.\n\nGet close: their blood <color=#FF4343>heals</color> you.",
-            "A <color=#FF4343>rocket</color> or <color=#FF4343>core eject</color> struck by a charged shot goes off as a <color=#FF4343>nuke</color>.\n\nThe terrain does not survive it.",
+            "A <color=#FF4343>rocket</color> or <color=#FF4343>core</color> struck by a charged shot goes off as a <color=#FF4343>nuke</color>.\n\nThe terrain does not survive it.",
             "Slam down from high enough and <color=#FF4343>the ground caves in</color>.",
             "<color=#FF4343>The Cyber Grind</color> runs right here, around this terminal.\n\nIt ends when V1 dies or runs."
         };
@@ -1553,15 +1592,19 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
         {
             if (UnityEngine.Random.value < 0.5f)
             {
+                int pick = UnityEngine.Random.Range(0, LevelTips.Length);
+                string zh;
+                if (Zh && TipTextsZh.Levels.TryGetValue(LevelTips[pick], out zh)) return zh;
                 try
                 {
-                    var key = "Assets/Data/Level Tips/" + LevelTips[UnityEngine.Random.Range(0, LevelTips.Length)] + ".asset";
+                    var key = "Assets/Data/Level Tips/" + LevelTips[pick] + ".asset";
                     var tip = Addressables.LoadAssetAsync<ScriptableObjects.TipOfTheDay>(key).WaitForCompletion();
                     if (tip != null && !string.IsNullOrEmpty(tip.tip)) return tip.tip;
                 }
                 catch (Exception e) { Plugin.Log.LogDebug("tip: " + e.Message); }
             }
-            return MinecraftTips[UnityEngine.Random.Range(0, MinecraftTips.Length)];
+            int mine = UnityEngine.Random.Range(0, MinecraftTips.Length);
+            return Zh ? TipTextsZh.Minecraft[mine] : MinecraftTips[mine];
         }
 
         /// <summary>SHOPZONE touch near: V1 is at a shop's screen (guns away, the pointing finger out: Minecraft lets the

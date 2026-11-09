@@ -105,7 +105,7 @@ public final class Ultracraft implements ClientModInitializer {
 	private static boolean haveCursor;
 	/** Ultracraft's own keys (V1/Steve, hands): never given up to a rebind. */
 	public static boolean isOwnKey(KeyMapping k) {
-		return k == toggle || k == handsKey;
+		return k == toggle || k == handsKey || k == sneakKey;
 	}
 
 	/** How the key that becomes V1 (or Steve) is bound now, e.g. "F8": prompts name the key the player set. */
@@ -137,6 +137,8 @@ public final class Ultracraft implements ClientModInitializer {
 
 	private static KeyMapping toggle;
 	private static KeyMapping handsKey;
+	/** ULTRAKILL's sneak: held, not toggled. A Minecraft key of its own, so it is rebound in Minecraft's controls. */
+	private static KeyMapping sneakKey;
 	private static boolean frozen;
 	private static long frozenAt;
 	private static boolean pauseSent;
@@ -182,6 +184,7 @@ public final class Ultracraft implements ClientModInitializer {
 		KeyMapping.Category ourKeys = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("ultracraft", "keys"));
 		toggle = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.ultracraft.toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F8, ourKeys));
 		handsKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.ultracraft.hands", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, ourKeys));
+		sneakKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.ultracraft.sneak", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_ALT, ourKeys));
 		ClientTickEvents.END_CLIENT_TICK.register(Ultracraft::clientTick);
 		ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> WorldMesh.chunkLoaded(chunk.getPos().x, chunk.getPos().z));
 		// ULTRAKILL's enemies are drawn by ULTRAKILL; their Minecraft stand-ins are only hitboxes
@@ -294,7 +297,8 @@ public final class Ultracraft implements ClientModInitializer {
 			// Steve with ULTRAKILL's enemies about: its layer, drawn from Steve's camera, over Minecraft's world
 			sendMobsDrawn(mc);
 			sendPuppets(mc);
-			if (steveDrawn && UkFrame.updateForOverlay()) UkFrame.draw(ctx);
+			// the layer itself goes in during the world pass (GameRendererMixin), under Minecraft's hand
+			renderHurtFlash(ctx);
 			return;
 		}
 		if (!active) {
@@ -309,11 +313,24 @@ public final class Ultracraft implements ClientModInitializer {
 		sendView(mc);
 		sendLang(mc);
 		UcKeybindsScreen.pollGunKeys(mc, mc.screen == null && !uiMode && mc.mouseHandler.isMouseGrabbed());
+		UcKeybindsScreen.pollSneak(sneakKey, mc.screen == null && !uiMode && mc.mouseHandler.isMouseGrabbed());
 		Movement.frame(mc);
 		// asleep: Minecraft's own view from the bed (its fade to morning), no V1 layer
 		if (Movement.sleeping) return;
-		if (UkFrame.updateForOverlay()) UkFrame.draw(ctx);
+		// the layer itself goes in during the world pass (GameRendererMixin), under Minecraft's hand
+		renderHurtFlash(ctx);
 		renderP(mc, ctx);
+	}
+
+	/**
+	 * The red ULTRAKILL washes over its own screen when V1 is hit. That pass is the HUD camera's, which writes the mask
+	 * side of the shared frame rather than the colour Minecraft draws, so the layer never carried it. UltraBridge sends
+	 * the alpha on its own and it is painted here, on top of the layer, the way the game does it.
+	 */
+	static void renderHurtFlash(GuiGraphics ctx) {
+		int a = UkLink.hurtFlash;
+		if (a <= 0) return;
+		ctx.fill(0, 0, ctx.guiWidth(), ctx.guiHeight(), (a << 24) | 0xFF0000);
 	}
 
 	private static final Map<Integer, Vec3> mobsDrawn = new HashMap<>();
@@ -629,6 +646,8 @@ public final class Ultracraft implements ClientModInitializer {
 			UcNet.toServer("DEAD");
 		}
 		wasDead = UkLink.dead;
+		// everything this tick said goes out together: one write for the tick instead of one per line
+		UkLink.flush();
 	}
 
 	/** As Steve with ULTRAKILL's enemies about: ULTRAKILL keeps getting the world, and V1's body follows Steve. */
@@ -649,6 +668,8 @@ public final class Ultracraft implements ClientModInitializer {
 		exportProjectiles(mc, p);
 		WorldMesh.tick(mc.level, bp);
 		safely("culling", () -> EnemyCulling.tick(mc, p));
+		// everything this tick said goes out together: one write for the tick instead of one per line
+		UkLink.flush();
 	}
 
 	/** Steve's view drawn this frame (the camera took a fresh frame from ULTRAKILL, not a third-person view). */
@@ -665,15 +686,13 @@ public final class Ultracraft implements ClientModInitializer {
 			UkLink.send("STEVE 0");
 		}
 		lastInputAt = System.currentTimeMillis();
-		originSent = false;
 		lastBlocks = null;
 		Movement.reset();
+		// the origin is only dropped when it really has to move (another dimension, a long way off): sending it again
+		// from where Steve happened to walk to made ULTRAKILL throw its terrain away and rebuild it, and the second
+		// V1 stood on the ground it was not there yet - "fell through the floor into the void"
 		teleportV1(p);
 		lastExport = null;
-		// ULTRAKILL may have restarted since, or the origin moved: send the far terrain, water and shops again
-		WorldMesh.reset();
-		Fluids.reset();
-		ShopExport.reset();
 		UkLink.send("HANDS " + (hands ? 1 : 0));
 		viewSent = -1;
 	}
@@ -683,6 +702,10 @@ public final class Ultracraft implements ClientModInitializer {
 		setUiMode(mc, false);
 		setFrozen(mc, false);
 		SteveMode.reset();
+		// sendInput stops the moment V1 is off, so ULTRAKILL keeps whatever buttons and keys were held on the last
+		// frame it heard about: come back with the fire button down and V1 shoots on its own until the game restarts.
+		// An empty IN is that last frame, with nothing held.
+		UkLink.send("IN 0 0 0 0");
 		// let go of V1 if Minecraft was carrying it
 		if (Movement.carried) UkLink.send("UNDRIVE 0 0 0");
 		Movement.reset();
@@ -834,6 +857,8 @@ public final class Ultracraft implements ClientModInitializer {
 			lastW = -1;
 			pauseSent = false;
 			Fluids.reset();
+			// a restarted ULTRAKILL has no terrain either, and it is the one place where starting over is right
+			WorldMesh.reset();
 			// a restarted ULTRAKILL knows none of our textures, shops or sky yet, nor the settings
 			langSent = "";
 			UltracraftConfig.sendOpts();
@@ -936,14 +961,63 @@ public final class Ultracraft implements ClientModInitializer {
 
 	private static final int RH = 12, RDOWN = 8, RUP = 14;
 
-	/** Solid blocks around the player as boxes: exposed full cubes merged into vertical runs, partial shapes as-is. */
+	/** The six ways a face can point, made once: exposed() asked for them on every solid block it looked at. */
+	private static final int[][] FACE_DIRS = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+
+	/** What the last tick said its projectiles were, so an empty list is not sent over and over. */
+	private static String lastProjs = "";
+
+	/** The same for the entities: an empty list is only worth sending once. */
+	private static String lastEnts = "";
+
+	/** One builder for the two per-tick exports: each finishes with toString() before the next one starts. */
+	private static final StringBuilder SENT = new StringBuilder(8 * 1024);
+
+	private static StringBuilder reused() {
+		SENT.setLength(0);
+		return SENT;
+	}
+
+	/** Three decimals without String.format: this runs for every entity of the world, every tick. */
+	private static StringBuilder f3(StringBuilder sb, double v) {
+		return sb.append(Math.round(v * 1000.0) / 1000.0);
+	}
+
+	/** One decimal, written as x.y so a whole number still reads as one. */
+	private static StringBuilder f1(StringBuilder sb, double v) {
+		long n = Math.round(v * 10.0);
+		return sb.append(n / 10).append('.').append(Math.abs(n % 10));
+	}
+
+	/** Any block of this column could be solid: asked of the section palettes, which cost nothing next to the blocks. */
+	private static boolean columnHasSolids(ClientLevel level, int x, int z, int yLow, int yHigh) {
+		net.minecraft.world.level.chunk.LevelChunkSection[] secs = level.getChunk(x >> 4, z >> 4).getSections();
+		int s0 = Math.max(0, level.getSectionIndex(yLow));
+		int s1 = Math.min(secs.length - 1, level.getSectionIndex(yHigh));
+		for (int i = s0; i <= s1; i++) {
+			net.minecraft.world.level.chunk.LevelChunkSection s = secs[i];
+			if (s == null || s.hasOnlyAir()) continue;
+			if (s.maybeHas(st -> !st.isAir())) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Solid blocks around the player as boxes: exposed full cubes merged into vertical runs, partial shapes as-is.
+	 *
+	 * The grid is 25x25 columns of 23 blocks, so 14,375 blocks ten times a second to read - and in open ground almost
+	 * every one of them is air. Each column now asks its chunk's palettes first and is skipped whole when no section
+	 * in it can hold a solid block, which leaves only the columns that really have something to read.
+	 */
 	private static void exportBlocks(ClientLevel level, BlockPos c) {
 		if (level == null) return;
 		StringBuilder sb = new StringBuilder(64 * 1024);
 		sb.append("BLOCKS ");
 		BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+		int yLow = c.getY() - RDOWN, yHigh = c.getY() + RUP;
 		for (int x = c.getX() - RH; x <= c.getX() + RH; x++) {
 			for (int z = c.getZ() - RH; z <= c.getZ() + RH; z++) {
+				if (!columnHasSolids(level, x, z, yLow, yHigh)) continue;
 				int runStart = Integer.MIN_VALUE;
 				for (int y = c.getY() - RDOWN; y <= c.getY() + RUP + 1; y++) {
 					boolean fullExposed = false;
@@ -982,8 +1056,7 @@ public final class Ultracraft implements ClientModInitializer {
 	}
 
 	private static boolean exposed(ClientLevel level, int x, int y, int z, BlockPos.MutableBlockPos m) {
-		int[][] d = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
-		for (int[] o : d) {
+		for (int[] o : FACE_DIRS) {
 			m.set(x + o[0], y + o[1], z + o[2]);
 			if (!level.getBlockState(m).isCollisionShapeFullBlock(level, m)) {
 				m.set(x, y, z);
@@ -996,26 +1069,36 @@ public final class Ultracraft implements ClientModInitializer {
 
 	/** Projectiles flying around V1 (not V1's own): ULTRAKILL tracks them for parries and decides hits on V1. */
 	private static void exportProjectiles(Minecraft mc, LocalPlayer self) {
-		StringBuilder sb = new StringBuilder("PROJS ");
+		StringBuilder sb = reused().append("PROJS ");
 		for (Entity e : mc.level.entitiesForRendering()) {
 			if (!(e instanceof Projectile pr) || e instanceof FishingHook || pr.getOwner() == self) continue;
 			if (e.distanceToSqr(self) > 48 * 48) continue;
 			Vec3 v = e.getDeltaMovement();
 			if (v.lengthSqr() < 1e-4) continue; // stuck in a block
 			String type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath();
-			sb.append(String.format(Locale.ROOT, "%d,%s,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,%.3f;",
-				e.getId(), type, e.getX(), e.getY() + e.getBbHeight() * 0.5, e.getZ(), v.x, v.y, v.z, Math.max(e.getBbWidth(), e.getBbHeight())));
+			sb.append(e.getId()).append(',').append(type).append(',')
+				.append(e.getX()).append(',').append(e.getY() + e.getBbHeight() * 0.5).append(',').append(e.getZ()).append(',')
+				.append(v.x).append(',').append(v.y).append(',').append(v.z).append(',')
+				.append(Math.max(e.getBbWidth(), e.getBbHeight())).append(';');
 		}
-		UkLink.send(sb.toString());
+		// an empty list still has to go out after a full one: it is how ULTRAKILL learns its last one is gone
+		String out = sb.toString();
+		if (out.length() > 6 || lastProjs.length() > 6) UkLink.send(out);
+		lastProjs = out;
 	}
 
 	private static void exportEntities(Minecraft mc, LocalPlayer self) {
-		StringBuilder sb = new StringBuilder("ENTS ");
+		StringBuilder sb = reused().append("ENTS ");
 		for (Entity e : mc.level.entitiesForRendering()) {
 			if (e instanceof net.minecraft.world.entity.boss.enderdragon.EndCrystal crystal) {
 				if (!crystal.isAlive() || e.distanceToSqr(self) > 80 * 80) continue;
-				sb.append(String.format(Locale.ROOT, "%d,end_crystal,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,1.0,1.0,0,0.0;", e.getId(), e.getX(), e.getY(), e.getZ(),
-					e.getBbWidth(), e.getBbHeight(), e.getBbHeight() * 0.5));
+				sb.append(e.getId()).append(",end_crystal,");
+				f3(sb, e.getX()).append(',');
+				f3(sb, e.getY()).append(',');
+				f3(sb, e.getZ()).append(',');
+				f3(sb, e.getBbWidth()).append(',');
+				f3(sb, e.getBbHeight()).append(',');
+				f3(sb, e.getBbHeight() * 0.5).append(",1.0,1.0,0,0.0;");
 				continue;
 			}
 			// ULTRAKILL's own enemies' stand-ins are ULTRAKILL's already
@@ -1031,10 +1114,21 @@ public final class Ultracraft implements ClientModInitializer {
 			// hostile mobs (and other V1s) are what ULTRAKILL's enemies go for
 			int hostile = e instanceof Enemy || v1 ? 1 : 0;
 			// on fire: ULTRAKILL's own fire burns on it (EntityMixin keeps Minecraft's flames off it meanwhile)
-			sb.append(String.format(Locale.ROOT, "%d,%s,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f,%.1f,%d,%.1f,%d;",
-				e.getId(), type, e.getX(), e.getY(), e.getZ(), e.getBbWidth(), e.getBbHeight(), e.getEyeHeight(), le.getHealth(), le.getMaxHealth(), hostile,
-				v1 ? e.getYHeadRot() : e.getYRot(), e.isOnFire() ? 1 : 0));
+			// id,type,x,y,z,w,h,eye,hp,maxhp,hostile,yaw,burning - read back by UltraBridge's ApplyEntities
+			sb.append(e.getId()).append(',').append(type).append(',');
+			f3(sb, e.getX()).append(',');
+			f3(sb, e.getY()).append(',');
+			f3(sb, e.getZ()).append(',');
+			f3(sb, e.getBbWidth()).append(',');
+			f3(sb, e.getBbHeight()).append(',');
+			f3(sb, e.getEyeHeight()).append(',');
+			f1(sb, le.getHealth()).append(',');
+			f1(sb, le.getMaxHealth()).append(',').append(hostile).append(',');
+			f1(sb, v1 ? e.getYHeadRot() : e.getYRot()).append(',').append(e.isOnFire() ? 1 : 0).append(';');
 		}
-		UkLink.send(sb.toString());
+		// as with the projectiles: an empty list has to follow a full one, or the last stand-ins would never go
+		String out = sb.toString();
+		if (out.length() > 5 || lastEnts.length() > 5) UkLink.send(out);
+		lastEnts = out;
 	}
 }

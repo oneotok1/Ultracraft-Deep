@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace UltraBridge
@@ -77,20 +77,20 @@ namespace UltraBridge
                 case "payload":
                 case "shockwave": return Mathf.RoundToInt(At(SizeTable, level) * 100f) + "% 范围";
                 case "reflex": return "+" + Mathf.RoundToInt(At(ReflexTable, level) * 1000f) + " 毫秒";
-                case "sender": return "x" + At(SenderTable, level).ToString("0.#") + " 反弹伤害";
-                case "demolition": return At(DemolitionTable, level).ToString("0.#") + " 方块";
+                case "sender": return "x" + At(SenderTable, level).ToString("0.#") + " 反弹伤害与速度";
+                case "demolition": return "挖掘范围 x" + At(DemolitionTable, level).ToString("0.#");
                 case "barbs": return "x" + At(BarbsTable, level).ToString("0.#") + " 勾爪伤害";
                 case "bloodfist": return level <= 1 ? "关闭" : "每次命中 +" + At(BloodfistTable, level) + " HP";
-                case "arc": return level <= 1 ? "关闭" : At(ArcTable, level) + " 道电弧，" + At(ArcDamageTable, level).ToString("0.##") + " 伤害";
+                case "arc": return level <= 1 ? "关闭" : At(ArcTable, level) + " 道电弧，拳伤害 x" + At(ArcDamageTable, level).ToString("0.##");
                 case "counter": return level <= 1 ? "关闭" : Mathf.RoundToInt(At(CounterTable, level) * 100f) + "% 爆炸范围";
-                case "adrenaline": return level <= 1 ? "关闭" : "+" + At(AdrenalineTable, level) + " 体力" + (level >= 5 ? "（满级 +25 HP）" : "");
+                case "adrenaline": return level <= 1 ? "关闭" : "+" + At(AdrenalineTable, level) + " 体力" + (level >= 5 ? "（额外 +25 HP）" : "");
                 case "detonator": return level <= 1 ? "关闭" : Mathf.RoundToInt(At(DetonatorTable, level) * 100f) + "% 爆炸范围";
                 case "seismic": return level <= 1 ? "关闭" : Mathf.RoundToInt(At(SeismicTable, level) * 100f) + "% 爆炸范围";
                 case "ironclad": return level <= 1 ? "关闭" : "-" + Mathf.RoundToInt(At(IroncladTable, level) * 100f) + "% 受到伤害";
                 case "overcharge": return "x" + At(RateTable, level).ToString("0.##") + " 充能速度";
-                case "grapple": return level <= 1 ? "关闭" : At(GrappleTable, level) + " 拉拽速度";
-                case "livewire": return level <= 1 ? "关闭" : At(LiveWireTable, level).ToString("0.#") + " 每秒伤害";
-                case "slingshot": return level <= 1 ? "关闭" : "+" + At(SlingshotTable, level) + " 弹射力度";
+                case "grapple": return level <= 1 ? "关闭" : "拉拽速度 " + At(GrappleTable, level);
+                case "livewire": return level <= 1 ? "关闭" : "每秒 x" + At(LiveWireTable, level).ToString("0.#") + "勾爪伤害";
+                case "slingshot": return level <= 1 ? "关闭" : "弹射速度 +" + At(SlingshotTable, level);
                 case "ripcord": return level <= 1 ? "关闭" : Mathf.RoundToInt(At(RipcordTable, level) * 100f) + "% 爆炸范围";
             }
             return "";
@@ -119,9 +119,9 @@ namespace UltraBridge
                 case "arm0.reflex": return "招架箭矢、火球与挥击的判定时间更长。";
                 case "arm0.sender": return "招架反弹的投射物速度更快、伤害更高。";
                 case "arm0.bloodfist": return "每次蓝拳击中回复 V1 生命。";
-                case "arm0.arc": return "蓝拳命中敌人向周围敌人传导电弧。";
-                case "arm0.counter": return "成功弹反时在身前引发爆炸，仅伤害敌人。";
-                case "arm0.adrenaline": return "成功招架回复体力（满级额外回复生命）。";
+                case "arm0.arc": return "蓝拳命中敌人向周围敌人传导电弧，电弧伤害受拳伤害加成。";
+                case "arm0.counter": return "触发招架闪光时在身前引发爆炸，仅伤害敌人，范围相对默认爆炸。";
+                case "arm0.adrenaline": return "触发招架闪光回复体力（满级额外回复生命）。";
                 case "arm1.shockwave": return "红拳冲击波范围更大。";
                 case "arm1.demolition": return "向地面拳击挖掘范围更大。";
                 case "arm1.detonator": return "拳击命中目标引发爆炸。";
@@ -130,8 +130,8 @@ namespace UltraBridge
                 case "arm1.overcharge": return "手持爆破/红拳时，拳击冷却更快。";
                 case "arm2.reel": return "勾爪重掷更快。";
                 case "arm2.barbs": return "勾爪命中造成伤害。";
-                case "arm2.grapple": return "勾爪抓取方块并将 V1 拉过去。";
-                case "arm2.livewire": return "被勾中的敌人持续受到电击。";
+                case "arm2.grapple": return "勾爪抓取方块并将 V1 拉过去，拉拽速度是瞬间速度。";
+                case "arm2.livewire": return "被勾中的敌人持续受到电击，伤害受勾爪伤害加成。";
                 case "arm2.slingshot": return "拉近自身断钩时往朝向方向弹射飞出。";
                 case "arm2.ripcord": return "拉近敌人引发爆炸（不伤害 V1）。";
             }
@@ -153,7 +153,7 @@ namespace UltraBridge
                 case "Join The Cyber Grind": return "加入电子血宫";
                 case "Stop Dark Spawns": return "停止黑暗生成";
                 case "Allow Dark Spawns": return "允许黑暗生成";
-                case "ALTERNATE": return "弹反模式";
+                case "ALTERNATE": return "变种";
                 case "ON": return "开";
                 case "OFF": return "关";
             }

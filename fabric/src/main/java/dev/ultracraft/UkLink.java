@@ -24,6 +24,9 @@ public final class UkLink {
 	}
 
 	public static volatile Pose pose;
+
+	/** How red ULTRAKILL's hurt overlay is right now, 0..255: it fades on its own side, and is mirrored here. */
+	public static volatile int hurtFlash;
 	public static volatile int hp = 100;
 	/** V1's full health (200 on Harmless). */
 	public static volatile int maxHp = 100;
@@ -60,6 +63,11 @@ public final class UkLink {
 						hp = Integer.parseInt(a[1]);
 						dead = a[2].equals("1");
 						if (a.length > 3) maxHp = Integer.parseInt(a[3]);
+					} else if (line.startsWith("HURT ")) {
+						// V1 took a hit: ULTRAKILL paints red over its own screen, but that pass is the mask side of
+						// the shared frame and never reaches the colour Minecraft draws. The alpha comes on its own
+						// and Ultracraft.renderV1 paints it over Minecraft's HUD instead
+						hurtFlash = Integer.parseInt(line.substring(5).trim());
 					} else if (line.startsWith("LOADING ")) {
 						loadingScene = line.substring(8);
 					} else {
@@ -76,6 +84,8 @@ public final class UkLink {
 			loadingScene = "";
 			out = null;
 			pose = null;
+			// a new link starts clean: lines held for the old one would be read as this one's first words
+			pending.setLength(0);
 			try {
 				Thread.sleep(1000);
 			} catch (InterruptedException ignored) {
@@ -106,15 +116,41 @@ public final class UkLink {
 		pose = p;
 	}
 
+	/**
+	 * Lines waiting to go out. Every send() used to write and flush on its own, and a tick has a dozen of them: a
+	 * dozen system calls and a dozen wakeups of the other side for what is really one batch of state. They are now
+	 * collected and written together, at most one flush every few milliseconds - shorter than any frame, so nothing
+	 * waits noticeably, and a tick's worth of lines leaves in a single write.
+	 */
+	private static final StringBuilder pending = new StringBuilder();
+	private static long lastFlushNs;
+
+	/** A clock ping is measured as a round trip, so it has to leave now rather than with the batch. */
+	private static final long FLUSH_EVERY_NS = 4_000_000L;
+
 	public static synchronized void send(String line) {
 		BufferedWriter w = out;
 		if (w == null) return;
+		pending.append(line).append('\n');
+		long now = System.nanoTime();
+		if (line.startsWith("CLOCK ") || now - lastFlushNs >= FLUSH_EVERY_NS) flushLocked(w, now);
+	}
+
+	/** Whatever has been collected, out now: the link going away, or a caller that has to be sure. */
+	public static synchronized void flush() {
+		BufferedWriter w = out;
+		if (w != null) flushLocked(w, System.nanoTime());
+	}
+
+	private static void flushLocked(BufferedWriter w, long now) {
+		lastFlushNs = now;
+		if (pending.length() == 0) return;
 		try {
-			w.write(line);
-			w.write('\n');
+			w.append(pending);
 			w.flush();
 		} catch (Exception e) {
 			out = null;
 		}
+		pending.setLength(0);
 	}
 }

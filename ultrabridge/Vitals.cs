@@ -36,6 +36,11 @@ namespace UltraBridge
         /// hearts with it, so the pool must not be charged for that hit a second time.</summary>
         internal static bool FromMc;
 
+        /// <summary>Set while a hit lands that must not shake the camera. ULTRAKILL sizes its shake as damage / 20
+        /// and decays it at 3 a second, so the killing blow the void deals (hp * 10 + 999) would leave the screen
+        /// shaking for a minute and more - far past anything a normal death reaches.</summary>
+        internal static bool NoShake;
+
         /// <summary>Set when the maximum moved, so SendPose sends the HP line even if the health itself did not.</summary>
         internal static bool MaxChanged;
 
@@ -233,8 +238,9 @@ namespace UltraBridge
         internal static void McVoid(NewMovement nm)
         {
             FromMc = true;
+            NoShake = true;
             try { nm.GetHurt(nm.hp * 10 + 999, false, 0f, ignoreInvincibility: true); }
-            finally { FromMc = false; }
+            finally { FromMc = false; NoShake = false; }
         }
     }
 

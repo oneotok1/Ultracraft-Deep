@@ -42,7 +42,11 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 		new UkPref("mouseReverseY", 'b', "Invert Mouse Y", "false", 0, 1, "Mouse up looks down."),
 		new UkPref("bloodEnabled", 'b', "Blood", "true", 0, 1, "ULTRAKILL's blood (it still heals V1 with this off)."),
 		new UkPref("allVolume", 'f', "ULTRAKILL Volume", "1", 0, 100, "The volume of everything ULTRAKILL plays."),
-		new UkPref("musicVolume", 'f', "ULTRAKILL Music", "0.6", 0, 100, "ULTRAKILL's music (fights, bosses, the Cyber Grind)."));
+		new UkPref("musicVolume", 'f', "ULTRAKILL Music", "0.6", 0, 100, "ULTRAKILL's music (fights, bosses, the Cyber Grind)."),
+		new UkPref("simplifyEnemies", 'i', "Enemy Silhouettes", "0", 0, 2,
+			"ULTRAKILL's own treatment of enemies far off. Outlines only: one drawn at any distance, sized by the thickness. Simplified: its model also drops to the low-poly one, cheaper to draw."),
+		new UkPref("outlineThickness", 'i', "Outline Thickness", "1", 0, 16,
+			"How thick that line is drawn, 1 to 16. 0 draws none at all, for enemies recoloured flat. It only applies with Enemy Silhouettes on."));
 
 	private static final String[] UK_DIFFICULTY = {"Harmless", "Lenient", "Standard", "Violent", "Brutal"};
 
@@ -84,11 +88,12 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 			open("Gameplay", "Becoming V1, what breaks blocks, impact frames.", UcSettingsScreen::gameplay));
 		list.addSmall(open("Shop & Rewards", "The OP Shop, the shop's screen, style rewards.", UcSettingsScreen::shop),
 			open("Performance", "ULTRAKILL's resolution and frame rate, effects, blood stains, terrain range, and a Low-End PC preset.", UcSettingsScreen::performance));
-		list.addSmall(open("Music", "ULTRAKILL's music in fights: which song, boss themes, volumes.", UcSettingsScreen::music),
-			open("Cheats", "ULTRAKILL's Sandbox cheats and a few of Ultracraft's.", UcCheats::fill));
+		list.addSmall(open("Cyber Grind", "The Grind's arenas, its looks and skies, and how its waves come.", UcSettingsScreen::cyber),
+			open("Music", "ULTRAKILL's music in fights: which song, boss themes, volumes.", UcSettingsScreen::music));
 		list.addSmall(open("ULTRAKILL Settings", "Sensitivity, field of view, screen shake... as Ultracraft plays it (ULTRAKILL's own settings stay as they are).",
 			UcSettingsScreen::ukSettings), Button.builder(Component.translatable("ULTRAKILL Controls..."), b -> minecraft.setScreen(new UcKeybindsScreen(this)))
 			.tooltip(Tooltip.create(Component.translatable("Rebind ULTRAKILL's keys."))).build());
+		list.addSmall(open("Cheats", "ULTRAKILL's Sandbox cheats and a few of Ultracraft's.", UcCheats::fill), null);
 	}
 
 	/** Debug: a category's page by its short name. */
@@ -96,6 +101,7 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 		UcSettingsScreen root = new UcSettingsScreen(null);
 		return switch (name) {
 			case "enemies" -> new Category(root, "Enemies & Bosses", UcSettingsScreen::enemies);
+			case "cyber" -> new Category(root, "Cyber Grind", UcSettingsScreen::cyber);
 			case "gameplay" -> new Category(root, "Gameplay", UcSettingsScreen::gameplay);
 			case "shop" -> new Category(root, "Shop & Rewards", UcSettingsScreen::shop);
 			case "performance" -> new Category(root, "Performance", UcSettingsScreen::performance);
@@ -119,10 +125,12 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 
 	/** One category's page. */
 	static final class Category extends OptionsSubScreen {
+		private final String name;
 		private final Consumer<Category> fill;
 
 		Category(Screen last, String name, Consumer<Category> fill) {
 			super(last, Minecraft.getInstance().options, Component.translatable(name));
+			this.name = name;
 			this.fill = fill;
 		}
 
@@ -151,9 +159,9 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 			return this;
 		}
 
-		/** The page again, showing settings changed behind its back (a preset). */
+		/** The page again, showing settings changed behind its back (a preset, a song picked on another page). */
 		void reopen() {
-			Minecraft.getInstance().setScreen(new Category(lastScreen, getTitle().getString(), fill));
+			Minecraft.getInstance().setScreen(new Category(lastScreen, name, fill));
 		}
 
 		@Override
@@ -164,6 +172,21 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 	}
 
 	// ------------------------------------------------------------------ the categories
+
+	private static void cyber(Category c) {
+		c.add(bool("Cyber Grind Arenas", "Starting the Cyber Grind at a shop takes you into its arena as ULTRAKILL has it: a 16 x 16 grid of columns that shifts into a new pattern every wave. Its temporary shop takes you back. Off: the waves come round the shop you started it from.",
+				UltracraftConfig.grindArenas, v -> UltracraftConfig.grindArenas = v),
+			bool("Cyber Grind Void Death", "Falling off the Cyber Grind's arenas kills (V1, and its enemies, like one of ULTRAKILL's pits) instead of lifting everyone back onto the grid. A fall's revive marker goes to the arena's spawn, inside the Grind.",
+				UltracraftConfig.grindVoidDeath, v -> UltracraftConfig.grindVoidDeath = v));
+		c.add(bool("Cyber Grind Split Waves", "Experimental: at higher waves the enemies come in a few batches instead of all at once, which slightly raises the total.",
+				UltracraftConfig.grindSubWaves, v -> UltracraftConfig.grindSubWaves = v),
+			bool("Cyber Grind Shuffle", "The Grind takes on its looks in a new order every run rather than in ULTRAKILL's own. Off: in its order, the same every run.",
+				UltracraftConfig.grindShuffle, v -> UltracraftConfig.grindShuffle = v));
+		c.add(Button.builder(Component.translatable("Cyber Grind Looks..."), b -> Minecraft.getInstance().setScreen(new GrindLooksScreen(c.self())))
+			.tooltip(Tooltip.create(Component.translatable("Which of ULTRAKILL's layers the Grind may take on."))).width(150).build(),
+			Button.builder(Component.translatable("Cyber Grind Skies..."), b -> Minecraft.getInstance().setScreen(new GrindSkiesScreen(c.self())))
+			.tooltip(Tooltip.create(Component.translatable("Which of ULTRAKILL's skies the Grind may use."))).width(150).build());
+	}
 
 	private static void enemies(Category c) {
 		c.add(bool("Minecraft Mobs", "Minecraft's monsters spawn. Bosses (the Ender Dragon, the Wither, Elder Guardians, the Warden) always do.",
@@ -186,10 +209,6 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 				UltracraftConfig.bossDeaths, v -> UltracraftConfig.bossDeaths = v),
 			bool("Boss Arenas", "A boss takes you (and the V1s with you) to its own arena, built after the room ULTRAKILL fights it in, and back when the fight is over.",
 				UltracraftConfig.bossArenas, v -> UltracraftConfig.bossArenas = v),
-			bool("Cyber Grind Arenas", "Starting the Cyber Grind at a shop takes you into its arena as ULTRAKILL has it: a 16 x 16 grid of columns that shifts into a new pattern every wave. Its temporary shop takes you back. Off: the waves come round the shop you started it from.",
-				UltracraftConfig.grindArenas, v -> UltracraftConfig.grindArenas = v),
-			bool("Cyber Grind Void Death", "Falling off the Cyber Grind's arenas kills (V1, and its enemies, like one of ULTRAKILL's pits) instead of lifting everyone back onto the grid. A fall's revive marker goes to the arena's spawn, inside the Grind.",
-				UltracraftConfig.grindVoidDeath, v -> UltracraftConfig.grindVoidDeath = v),
 			bool("ULTRAKILL Arenas", "Arenas themed after ULTRAKILL's layers of Hell generate in new parts of the world, each with a boss waiting inside.",
 				UltracraftConfig.arenas, v -> UltracraftConfig.arenas = v),
 			bool("ULTRAKILL While Steve", "Back as Steve (%s), ULTRAKILL's enemies stay and keep fighting: you see them, and they come for Steve. Off: they wait, frozen, until you're V1 again.",
@@ -215,7 +234,11 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 			bool("Start ULTRAKILL", "Starting Minecraft starts ULTRAKILL too (through Steam), and closing Minecraft closes it.", UltracraftConfig.launchUltrakill,
 				v -> UltracraftConfig.launchUltrakill = v),
 			bool("Teammate Markers", "In multiplayer: the other players' names, health and distance over their heads, seen through walls, and at the screen's edge when they're off it.",
-				UltracraftConfig.teammateMarkers, v -> UltracraftConfig.teammateMarkers = v));
+				UltracraftConfig.teammateMarkers, v -> UltracraftConfig.teammateMarkers = v),
+			bool("Sneak Holds V1 in Midair", "Holding the sneak key in midair stops V1 dead: the horizontal speed is taken away and the body stays where it is until the key is let go. A quirk of the edge rule, off by default - nothing in Minecraft stops a falling player.",
+				UltracraftConfig.airSneakHold, v -> UltracraftConfig.airSneakHold = v),
+			bool("Parry Everything in Reach", "One blue punch parries every parryable thing it can reach in that frame, instead of only the first one ULTRAKILL's collider order happened to touch. A sawblade and an enemy's parryable blow arriving together both go off. Off: ULTRAKILL's own order, one parry per punch.",
+				UltracraftConfig.parryEverything, v -> UltracraftConfig.parryEverything = v));
 	}
 
 	private static void shop(Category c) {
@@ -287,18 +310,37 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 		c.add(Button.builder(Component.translatable("Fight Music: %s", UcMusicScreen.current()), b -> Minecraft.getInstance().setScreen(new UcMusicScreen(c.self())))
 				.tooltip(Tooltip.create(Component.translatable("Which ULTRAKILL song plays in fights: off, a random one each fight, or one from its soundtrack."))).build(),
 			null);
+		Button filter = Button.builder(Component.translatable("Music Filter..."), b -> Minecraft.getInstance().setScreen(new UcMusicFilterScreen(c.self())))
+			.tooltip(Tooltip.create(Component.translatable("Songs the random pick leaves out. Only used while Fight Music is Random: a song picked by hand plays whether it is left out here or not.")))
+			.build();
+		filter.active = UltracraftConfig.fightMusic.equals("random");
+		c.add(filter, null);
 		c.add(Button.builder(Component.translatable("Boss Music & Intros..."), b -> Minecraft.getInstance().setScreen(new UcBossMusicScreen(c.self())))
 				.tooltip(Tooltip.create(Component.translatable("Each boss's song: (Default) is its own ULTRAKILL theme (V2: Versus, Minos Prime: Order, Sisyphus Prime: War...), any song of ULTRAKILL's, or one of your own (Your Music). And which entrance it makes, for the bosses that have more than one."))).build(),
 			null);
 		c.add(bool("Boss Themes", "Bosses and arenas bring their own ULTRAKILL song (Boss Music...). Off: the Fight Music plays for them too.",
-				UltracraftConfig.bossThemes, v -> UltracraftConfig.bossThemes = v),
-			bool("Calm Music", "Between fights the song's calm version plays softly, as in ULTRAKILL's levels. Off: ULTRAKILL's music only plays in fights.",
+				UltracraftConfig.bossThemes, v -> {
+					UltracraftConfig.bossThemes = v;
+					// off: whatever theme a boss has going gives way now, not at the next boss; on: the arena V1
+					// is standing in gets its theme again
+					UcThemes.retune();
+				}),
+			bool("Cyber Grind Calm Music", "In the Cyber Grind's pauses between waves the song's calm version plays softly, as in ULTRAKILL's levels. Off: the song only plays during the waves.",
 				UltracraftConfig.calmMusic, v -> {
 					UltracraftConfig.calmMusic = v;
 					UltracraftConfig.sendMusic();
 				}),
 			bool("Hush Minecraft's Music", "Minecraft's own music pauses while ULTRAKILL's fight music plays.", UltracraftConfig.hushMcMusic,
-				v -> UltracraftConfig.hushMcMusic = v));
+				v -> {
+					UltracraftConfig.hushMcMusic = v;
+					// takes effect on the spot: the fight in progress starts or stops hushing Minecraft's music
+					UcThemes.refight();
+				}),
+			bool("Main World Music", "ULTRAKILL's fight music also plays in Minecraft's world, for its enemies that come out there. Off: the Cyber Grind and bosses keep theirs.",
+				UltracraftConfig.worldMusic, v -> {
+					UltracraftConfig.worldMusic = v;
+					UltracraftConfig.sendMusic();
+				}));
 		List<OptionInstance<?>> volumes = new ArrayList<>();
 		for (UkPref p : UK_PREFS) if (VOLUMES.contains(p.key)) volumes.add(ukOption(p));
 		c.add(volumes.toArray(new OptionInstance[0]));
@@ -385,6 +427,7 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 		int value = Math.round(percent ? f * 100f : f);
 		java.util.function.IntFunction<String> label = p.key.equals("weaponHoldPosition") ? v -> v == 0 ? "Right" : v == 1 ? "Middle" : "Left"
 			: p.key.equals("difficulty") ? v -> UK_DIFFICULTY[Math.max(0, Math.min(4, v))]
+			: p.key.equals("simplifyEnemies") ? v -> v == 0 ? "Off" : v == 1 ? "Outlines only" : "Simplified"
 			: percent ? v -> v + "%" : Integer::toString;
 		return slider(p.caption, p.tooltip, " (ULTRAKILL's own settings stay as they are.)", p.min, p.max, value, label,
 			v -> setUk(p, p.type == 'i' ? Integer.toString(v) : percent ? String.format(Locale.ROOT, "%.2f", v / 100f) : String.format(Locale.ROOT, "%.1f", (float) v)));

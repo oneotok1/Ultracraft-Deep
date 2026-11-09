@@ -20,6 +20,7 @@
   ],
   "mixins": [
     "AbstractArrowAccessor",
+    "BlockItemMixin",
     "EntityTouchMixin",
     "LargeFireballAccessor",
     "LivingEntityMixin",

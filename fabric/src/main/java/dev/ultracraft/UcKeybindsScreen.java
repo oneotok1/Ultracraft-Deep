@@ -10,6 +10,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.options.OptionsSubScreen;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
@@ -63,6 +64,7 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 		return action.startsWith("Gun/");
 	}
 
+
 	private static final boolean[] gunDown = new boolean[16];
 
 	/** Guns out, nothing open: a weapon's key switches straight to it (ULTRAKILL: GUN slot colour). */
@@ -80,6 +82,28 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 			}
 			gunDown[g++] = down;
 		}
+	}
+
+	private static boolean sneakDown;
+
+	/**
+	 * Sneak is held, not toggled: ULTRAKILL slows the walk and holds V1 at the ledge while it is down. The key is
+	 * Minecraft's own (see Ultracraft.sneakKey), so it is rebound in Minecraft's controls like any other.
+	 */
+	static void pollSneak(KeyMapping sneak, boolean ingame) {
+		if (sneak == null) return;
+		boolean down = ingame && sneak.isDown();
+		if (down == sneakDown) return;
+		sneakDown = down;
+		UkLink.send("SNEAK " + (down ? 1 : 0));
+	}
+
+	/** The heading a key is listed under: what it does, not which of ULTRAKILL's maps it lives in. */
+	static String group(String action) {
+		if (isGun(action)) return "Gun Keys";
+		if (action.startsWith("Movement/")) return "Movement";
+		if (action.startsWith("Fist/")) return "Arms";
+		return "Weapons";
 	}
 
 	private final List<Button> buttons = new ArrayList<>();
@@ -118,8 +142,19 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 	@Override
 	protected void addOptions() {
 		buttons.clear();
+		// grouped by what the key does: a heading per group, then a few keys to a row (one row of them all runs
+		// off the screen, and the ones past the edge can't be reached)
+		String open = null;
 		List<AbstractWidget> row = new ArrayList<>();
 		for (int i = 0; i < BINDS.size(); i++) {
+			Bind bind = BINDS.get(i);
+			String group = group(bind.action);
+			if (!group.equals(open)) {
+				if (!row.isEmpty()) list.addSmall(row);
+				row = new ArrayList<>();
+				list.addHeader(Component.translatable(group));
+				open = group;
+			}
 			int index = i;
 			Button b = Button.builder(label(i), btn -> {
 				waiting = index;
@@ -127,6 +162,10 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 			}).width(150).build();
 			buttons.add(b);
 			row.add(b);
+			if (row.size() == PER_ROW) {
+				list.addSmall(row);
+				row = new ArrayList<>();
+			}
 		}
 		row.add(Button.builder(Component.translatable("Reset All"), btn -> {
 			UltracraftConfig.ukBinds.clear();
@@ -136,6 +175,9 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 		}).width(150).build());
 		list.addSmall(row);
 	}
+
+	/** How many keys a row of the page holds. */
+	private static final int PER_ROW = 3;
 
 	private Component label(int i) {
 		Bind b = BINDS.get(i);
@@ -163,7 +205,7 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 		if (waiting >= 0) {
 			// Esc cancels
 			if (e.key() == GLFW.GLFW_KEY_ESCAPE) {
-				// Esc: cancels, or on a weapon's key, unbinds it
+				// Esc: cancels, or on a key Minecraft owns, unbinds it
 				if (isGun(BINDS.get(waiting).action)) UltracraftConfig.ukBinds.remove(BINDS.get(waiting).action);
 				waiting = -1;
 				refresh();

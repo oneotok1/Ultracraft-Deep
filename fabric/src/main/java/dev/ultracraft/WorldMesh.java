@@ -180,7 +180,9 @@ public final class WorldMesh {
 	/** Debug: sections ULTRAKILL has now, and how many are kept for its enemies. */
 	static String info(BlockPos center) {
 		int cx = center.getX() >> 4, cy = center.getY() >> 4, cz = center.getZ() >> 4;
-		return "sections=" + sent.size() + " anchors=" + anchors(cx, cy, cz, rh()).size() + " enemies=" + Lighting.enemySpots().size();
+		return "sections=" + sent.size() + " anchors=" + anchors(cx, cy, cz, rh()).size() + " enemies=" + Lighting.enemySpots().size()
+			+ " dirty=" + dirty.size() + " rh=" + rh() + " rv=" + RV + " ticks=" + ticks
+			+ " level=" + (lastLevel == null ? "none" : lastLevel.dimension().toString());
 	}
 
 	private static int idx(int x, int y, int z) {

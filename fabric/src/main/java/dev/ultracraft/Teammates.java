@@ -58,9 +58,17 @@ final class Teammates {
 			if (!d.dim().equals(dim) || d.name().equals(mc.player.getName().getString())) continue;
 			mark(mc, ctx, d.at().add(0.0, 1.2, 0.0), "+ " + d.name() + " DOWN: stand here", 0xFFFF6060, d.pct() / 100f, 0xFF40FF60);
 		}
+		// a Grind wave's last three, marked through walls: the end of a wave is a search otherwise. Name only: the
+		// point of the mark is where it is, and ULTRAKILL shows its health on the enemy itself
+		for (UkEnemyEntity e : mc.level.getEntitiesOfClass(UkEnemyEntity.class, mc.player.getBoundingBox().inflate(160.0))) {
+			if (!e.lastFew() || !e.isAlive()) continue;
+			Vec3 at = e.getPosition(partial).add(0.0, e.getBbHeight() + 0.45, 0.0);
+			mark(mc, ctx, at, e.getName().getString(), 0xFFFFC24D, -1f, 0);
+		}
 	}
 
-	/** One marker: a label over a point (at the screen's edge when it's off it) and a bar under it. */
+	/** One marker: a label over a point (at the screen's edge when it's off it) and, when frac is 0 or more, a bar
+	 * under it. */
 	private static void mark(Minecraft mc, GuiGraphics ctx, Vec3 at, String name, int color, float frac, int barColor) {
 		var camera = mc.gameRenderer.getMainCamera();
 		Vec3 to = at.subtract(camera.position());
@@ -85,6 +93,7 @@ final class Teammates {
 		// a dark plate behind it, so it reads over anything ULTRAKILL draws
 		ctx.fill(x - tw / 2 - 3, y - 12, x + tw / 2 + 3, y + 1, 0x90000000);
 		ctx.drawString(mc.font, label, x - tw / 2, y - 10, color, true);
+		if (frac < 0f) return;
 		int bw = Math.max(30, tw), bx = x - bw / 2;
 		ctx.fill(bx, y + 2, bx + bw, y + 5, 0xB0200000);
 		ctx.fill(bx, y + 2, bx + Math.round(bw * Mth.clamp(frac, 0f, 1f)), y + 5, barColor);

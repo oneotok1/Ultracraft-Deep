@@ -1,4 +1,4 @@
-﻿// UltraBridge, part five: what the shop's upgrades do (Minecraft keeps the levels and sells them: UPGRADES, UPBUY).
+// UltraBridge, part five: what the shop's upgrades do (Minecraft keeps the levels and sells them: UPGRADES, UPBUY).
 //
 // Every weapon and each arm has its own Power (40% at first, so a zombie takes two headshots; 300% fully upgraded, 1500% with the OP Shop: damage to
 // enemies, Minecraft's mobs and blocks) and upgrades of its own (blast sizes go to 1500% with the OP Shop too):
@@ -154,20 +154,20 @@ namespace UltraBridge
                 case "payload":
                 case "shockwave": return Mathf.RoundToInt(At(SizeTable, level) * 100f) + "% size";
                 case "reflex": return "+" + Mathf.RoundToInt(At(ReflexTable, level) * 1000f) + " ms";
-                case "sender": return "x" + At(SenderTable, level).ToString("0.#") + " return";
-                case "demolition": return At(DemolitionTable, level).ToString("0.#") + " blocks";
+                case "sender": return "x" + At(SenderTable, level).ToString("0.#") + " return damage and speed";
+                case "demolition": return "dig range x" + At(DemolitionTable, level).ToString("0.#");
                 case "barbs": return "x" + At(BarbsTable, level).ToString("0.#") + " hook damage";
                 case "bloodfist": return level <= 1 ? "off" : "+" + At(BloodfistTable, level) + " HP a hit";
-                case "arc": return level <= 1 ? "off" : At(ArcTable, level) + " arcs, " + At(ArcDamageTable, level).ToString("0.##") + " damage";
+                case "arc": return level <= 1 ? "off" : At(ArcTable, level) + " arcs, punch damage x" + At(ArcDamageTable, level).ToString("0.##");
                 case "counter": return level <= 1 ? "off" : Mathf.RoundToInt(At(CounterTable, level) * 100f) + "% blast";
-                case "adrenaline": return level <= 1 ? "off" : "+" + At(AdrenalineTable, level) + " stamina" + (level >= 5 ? ", +25 HP" : "");
+                case "adrenaline": return level <= 1 ? "off" : "+" + At(AdrenalineTable, level) + " stamina" + (level >= 5 ? " (+25 HP extra)" : "");
                 case "detonator": return level <= 1 ? "off" : Mathf.RoundToInt(At(DetonatorTable, level) * 100f) + "% blast";
                 case "seismic": return level <= 1 ? "off" : Mathf.RoundToInt(At(SeismicTable, level) * 100f) + "% blast";
                 case "ironclad": return level <= 1 ? "off" : "-" + Mathf.RoundToInt(At(IroncladTable, level) * 100f) + "% damage taken";
                 case "overcharge": return "x" + At(RateTable, level).ToString("0.##") + " recharge";
-                case "grapple": return level <= 1 ? "off" : At(GrappleTable, level) + " yank speed";
-                case "livewire": return level <= 1 ? "off" : At(LiveWireTable, level).ToString("0.#") + " damage/s";
-                case "slingshot": return level <= 1 ? "off" : "+" + At(SlingshotTable, level) + " launch";
+                case "grapple": return level <= 1 ? "off" : "yank speed " + At(GrappleTable, level);
+                case "livewire": return level <= 1 ? "off" : "x" + At(LiveWireTable, level).ToString("0.#") + " hook damage/s";
+                case "slingshot": return level <= 1 ? "off" : "launch speed +" + At(SlingshotTable, level);
                 case "ripcord": return level <= 1 ? "off" : Mathf.RoundToInt(At(RipcordTable, level) * 100f) + "% blast";
             }
             return "";
@@ -201,15 +201,15 @@ namespace UltraBridge
                 case "arm2.reel": return "Throws again sooner.";
                 case "arm2.barbs": return "The hook itself hurts what it catches.";
                 case "arm0.bloodfist": return "Every punch that lands heals V1.";
-                case "arm0.arc": return "Punches arc lightning to enemies nearby.";
-                case "arm0.counter": return "A parry sets off a blast in front of V1 that only hurts enemies.";
+                case "arm0.arc": return "Punches arc lightning to enemies nearby; the arc's damage scales with punch damage.";
+                case "arm0.counter": return "A parry sets off a blast in front of V1 that only hurts enemies; its size is relative to the default blast.";
                 case "arm0.adrenaline": return "A parry refills stamina (at the top, heals too).";
                 case "arm1.detonator": return "Punches that land blow up on what they hit.";
                 case "arm1.seismic": return "Slams erupt in a blast around V1 when they land.";
                 case "arm1.ironclad": return "V1 takes less damage while the Knuckleblaster is out.";
                 case "arm1.overcharge": return "Punch stamina comes back faster with the Knuckleblaster out.";
-                case "arm2.grapple": return "The hook bites into blocks and yanks V1 to them.";
-                case "arm2.livewire": return "A caught enemy is shocked for as long as the hook holds it.";
+                case "arm2.grapple": return "The hook bites into blocks and yanks V1 to them; the yank speed is an instant velocity.";
+                case "arm2.livewire": return "A caught enemy is shocked for as long as the hook holds it; the damage scales with hook damage.";
                 case "arm2.slingshot": return "Being pulled to something ends in a launch the way V1 looks.";
                 case "arm2.ripcord": return "An enemy reeled in bursts in a blast (it can't hurt V1).";
             }

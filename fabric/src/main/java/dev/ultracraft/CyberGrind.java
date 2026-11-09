@@ -55,6 +55,13 @@ final class CyberGrind {
 	private static final int WAVES_PER_ARENA = 5, BOSS_EVERY = 15;
 	/** This wave is a boss (UkBosses' arena fight): it's cleared when the boss is beaten. */
 	private static boolean bossWave;
+	/** Split waves: how many parts this wave comes in, and which one is on (0 before its first). */
+	private static int parts = 1, part;
+	/** Split waves: what the whole wave's enemies are worth together, and the experience a whole wave pays (each part
+	 * takes a share of both, so parts add up to what one wave would have given). */
+	private static int waveBudget, waveXp, waveXpPaid;
+	/** Split waves: the option as it stood when this run started, so a change made mid-run waits for the next one. */
+	private static boolean splitWaves;
 
 	static volatile boolean running;
 	static volatile int wave;
@@ -75,6 +82,10 @@ final class CyberGrind {
 	private static GrindArenas.Built arena;
 	/** The wave's jump pads went to the party's ULTRAKILLs (they're sent once the columns stop moving). */
 	private static boolean padsSent;
+	/** What a cleared wave hands out half a second later: the heal lands once the wave's last enemy is really gone,
+	 * so it is not undone by whatever was still in the air when it died. */
+	private static final Map<UUID, Integer> healAt = new HashMap<>();
+
 	/** This run's arenas, shuffled: each run starts somewhere new and goes through all of them before any comes back. */
 	private static final List<Integer> order = new ArrayList<>();
 	private static int orderPos;
@@ -132,7 +143,10 @@ final class CyberGrind {
 			if (UkBosses.busy()) UkBosses.stop(old, "the Cyber Grind moved on");
 		}
 		runner = next.getUUID();
+		// the wave starts over from theirs: its parts come again from the first
 		if (countdown < 0) wave = Math.max(0, wave - 1);
+		part = 0;
+		parts = 1;
 		left = 0;
 		countdown = 100;
 		hud(next.getName().getString() + " CARRIES THE RUN ON");
@@ -216,6 +230,8 @@ final class CyberGrind {
 		Return r = party.remove(sp.getUUID());
 		UcNet.send(sp, "SKY -");
 		UcNet.send(sp, "PADS");
+		// out of the arenas: the Grind's music is theirs no longer, whether or not the run goes on for the others
+		UcNet.send(sp, "GRINDMUSIC 0");
 		if (r != null && server != null) {
 			ServerLevel back = server.getLevel(r.level());
 			if (back == null) back = server.overworld();
@@ -238,8 +254,27 @@ final class CyberGrind {
 		return sb.toString();
 	}
 
+	/** Every server tick: the heals a cleared wave put off, once their moment comes. */
+	static void flushHeals() {
+		if (healAt.isEmpty()) return;
+		int now = ServerOps.ticks();
+		for (java.util.Iterator<Map.Entry<UUID, Integer>> it = healAt.entrySet().iterator(); it.hasNext(); ) {
+			Map.Entry<UUID, Integer> e = it.next();
+			if (e.getValue() > now) continue;
+			it.remove();
+			ServerPlayer o = server != null ? server.getPlayerList().getPlayer(e.getKey()) : null;
+			if (o == null || !o.isAlive()) continue;
+			o.setHealth(o.getMaxHealth());
+			UcNet.send(o, "FULLHEAL");
+			UcNet.send(o, "GRINDRESTORE");
+		}
+	}
+
 	/** The world closed. */
 	static void reset() {
+		// before the server goes: the music ends with the run
+		sendParty("GRINDMUSIC 0");
+		healAt.clear();
 		running = false;
 		runner = null;
 		server = null;
@@ -292,6 +327,7 @@ final class CyberGrind {
 		server = sp.level().getServer();
 		runLevel = sp.level().dimension();
 		running = true;
+		splitWaves = UltracraftConfig.grindSubWaves;
 		wave = 0;
 		left = 0;
 		countdown = 60;
@@ -319,13 +355,22 @@ final class CyberGrind {
 
 	/** /uc grind start or arena n: a run in the Grind's arenas from arena index on (-1: any), for this V1 alone. */
 	static boolean startArenas(ServerPlayer sp, int index) {
+		return startArenas(sp, index, 0);
+	}
+
+	/**
+	 * The same, from a wave on: the run starts there instead of at the first wave (the waves before it pay nothing,
+	 * so a run jumped into the middle of is not worth more than one fought up to there).
+	 */
+	static boolean startArenas(ServerPlayer sp, int index, int fromWave) {
 		if (running || !UcNet.isV1(sp)) return false;
 		server = sp.level().getServer();
 		if (GrindArenas.level(server) == null) return false;
 		runner = sp.getUUID();
 		runLevel = GrindArenas.DIMENSION;
 		running = true;
-		wave = 0;
+		splitWaves = UltracraftConfig.grindSubWaves;
+		wave = Math.max(0, fromWave - 1);
 		left = 0;
 		arenaMode = true;
 		nextArenaDue = false;
@@ -342,8 +387,10 @@ final class CyberGrind {
 	/** A new order of arenas for the run, first first (or any, for -1). */
 	private static void shuffle(int first) {
 		order.clear();
-		for (int i = 0; i < GrindArenas.ARENAS.size(); i++) order.add(i);
-		java.util.Collections.shuffle(order, new java.util.Random(server.overworld().getRandom().nextLong()));
+		// only the looks the player left on, in ULTRAKILL's own order; a shuffled run takes them in any order
+		order.addAll(GrindStyleRules.looksOn());
+		if (UltracraftConfig.grindShuffle)
+			java.util.Collections.shuffle(order, new java.util.Random(server.overworld().getRandom().nextLong()));
 		if (first >= 0) {
 			order.remove(Integer.valueOf(first));
 			order.add(0, first);
@@ -376,6 +423,9 @@ final class CyberGrind {
 		wavesHere = 0;
 		RandomSource random = server.overworld().getRandom();
 		arena = first ? GrindArenas.build(level, index, random.nextLong()) : GrindArenas.retheme(index);
+		// the music from the moment the grid takes its new shape, as ULTRAKILL opens a level with its song;
+		// a later arena keeps the run's song going, only the first arena starts it
+		if (first) sendParty("GRINDMUSIC 1");
 		center = arena.center();
 		shopId = arena.shop() != null ? arena.shop().asLong() : 0L;
 		countdown = 100;
@@ -422,7 +472,7 @@ final class CyberGrind {
 					if (voidDeath) {
 						UcNet.send(o, "HURT 0 void");
 					} else {
-						Vec3 to = arena.spawn();
+						Vec3 to = GrindArenas.standing(arena.spawn());
 						o.teleportTo(o.level(), to.x, to.y, to.z, Set.of(), o.getYRot(), o.getXRot(), true);
 						o.fallDistance = 0;
 					}
@@ -446,6 +496,9 @@ final class CyberGrind {
 					// this arena is done: on to the next
 					nextArenaDue = false;
 					enterArena(nextArena(true));
+				} else if (part < parts) {
+					// a part of this wave is still to come: the wave itself goes on
+					spawnPart(sp, sp.level(), sp.level().getRandom(), fighters());
 				} else {
 					startWave(sp);
 				}
@@ -473,18 +526,80 @@ final class CyberGrind {
 		if (wave % BOSS_EVERY == 0 && bossWave(sp, level, random)) return;
 		// the budget grows with every wave (and with every V1 fighting it); the biggest enemies come in later
 		int fighters = fighters();
-		int budget = Math.round((4 + wave * 3 + wave * wave / 4) * (1f + 0.6f * (fighters - 1)));
-		int most = Math.round((4 + wave * 2) * (1f + 0.5f * (fighters - 1)));
+		waveBudget = Math.round((4 + wave * 3 + wave * wave / 4) * (1f + 0.6f * (fighters - 1)));
+		// split waves: from a boss wave on, the next waves come in more parts (2 up to the second boss, then 3, then 4)
+		parts = 1;
+		if (splitWaves) parts = Math.min(4, 1 + (wave - 1) / BOSS_EVERY);
+		part = 0;
+		waveXpPaid = 0;
+		waveXp = 5 + wave * 3;
+		spawnPart(sp, level, random, fighters);
+	}
+
+	/** Jump to a wave by number: the one on is called off (nothing pays out for it), and the one asked for starts at
+	 * once, as if the run had got there. For trying out the later waves without grinding up to them. */
+	static boolean jumpTo(ServerPlayer sp, int target) {
+		if (!running || target < 1) return false;
+		ServerPlayer who = runnerPlayer();
+		if (who == null) return false;
+		// the enemies of the wave being skipped go, wherever they are
+		for (ServerPlayer o : sp.level().getServer().getPlayerList().getPlayers()) {
+			if (o == sp || (UcNet.isV1(o) && o.level() == sp.level() && o.position().distanceTo(center) < LEAVE + 20)) UcNet.send(o, "GRINDCLEAR");
+		}
+		if (bossWave && UkBosses.busy()) UkBosses.stop(who, "the Cyber Grind moved on");
+		bossWave = false;
+		left = 0;
+		countdown = -1;
+		wave = target - 1;
+		spawnPartReset();
+		startWave(who);
+		return true;
+	}
+
+	/** The parts of the wave that is on: cleared before a wave asked for starts. */
+	private static void spawnPartReset() {
+		parts = 1;
+		part = 0;
+		waveXpPaid = 0;
+	}
+
+	/**
+	 * One part of the wave. Every part comes in at three fifths of the whole wave, not a share of it: a split wave is
+	 * longer and each part is a wave of its own, only a lighter one, so the number of V1s in front of you grows with
+	 * the wave but slower than it would unsplit. A part keeps at least a tenth of its budget for light enemies, so
+	 * that the hard ones alone never fill it; the ground stays where it is, only a whole wave shifts the pattern.
+	 */
+	private static void spawnPart(ServerPlayer sp, ServerLevel level, RandomSource random, int fighters) {
+		part++;
+		waveTicks = 0;
+		int budget = part == 1 || parts == 1 ? waveBudget : Math.max(1, Math.round(waveBudget * 0.6f));
+		int most = Math.max(1, Math.round((4 + wave * 2) * (1f + 0.5f * (fighters - 1)) * 0.6f));
+		// at least a tenth of the part's budget goes to the lightest enemies, whatever the hard ones would take
+		int lightReserve = Math.round(budget * 0.1f);
 		List<Kind> spawn = new ArrayList<>();
+		// how many of each the wave may hold, as the Cyber Grind caps its rarer enemies (EndlessGrid's
+		// CapUncommonsAmount): so many by this wave, and never more than that however far in
+		Map<String, Integer> room = new HashMap<>();
 		int guard = 0;
 		while (budget > 0 && spawn.size() < most && guard++ < 400) {
+			int free = budget - lightReserve;
 			List<Kind> can = new ArrayList<>();
-			for (Kind k : KINDS) if (k.from <= wave && k.cost <= budget) can.add(k);
-			if (can.isEmpty()) break;
+			for (Kind k : KINDS) {
+				if (k.from > wave || k.cost > budget || (spawn.isEmpty() && k.cost > free)) continue;
+				if (room.computeIfAbsent(k.type, t -> capped(k, wave)) <= 0) continue;
+				can.add(k);
+			}
+			if (can.isEmpty()) {
+				// only the reserve is left: spend it on the lightest the wave allows
+				for (Kind k : KINDS) if (k.from <= wave && k.cost <= budget) can.add(k);
+				if (can.isEmpty()) break;
+			}
 			// the newest enemies are the likeliest
 			Kind k = can.get(Math.max(0, can.size() - 1 - (int) Math.floor(Math.abs(random.nextGaussian()) * can.size() / 2.0)));
 			spawn.add(k);
+			room.merge(k.type, -1, Integer::sum);
 			budget -= k.cost;
+			lightReserve = Math.max(0, lightReserve - k.cost);
 		}
 		left = 0;
 		StringBuilder log = new StringBuilder();
@@ -495,9 +610,25 @@ final class CyberGrind {
 			UcNet.send(sp, String.format(Locale.ROOT, "SPAWNAT %s %.2f %.2f %.2f 2", k.type, at.x, y, at.z));
 			left++;
 		}
-		org.slf4j.LoggerFactory.getLogger("ultracraft").info("Cyber Grind wave {} ({} fighting):{}", wave, fighters, log);
-		hud("WAVE " + wave);
+		org.slf4j.LoggerFactory.getLogger("ultracraft").info("Cyber Grind wave {}{} ({} fighting):{}",
+			wave, parts > 1 ? " part " + part + "/" + parts : "", fighters, log);
+		hud("WAVE " + wave + (parts > 1 ? String.format(Locale.ROOT, "  (%d/%d)", part, parts) : ""));
 		sendState();
+	}
+
+	/**
+	 * How many of one kind a wave may hold. The Cyber Grind's rarer enemies come so many by the wave reached and no
+	 * more than a hard cap (EndlessGrid's CapUncommonsAmount); every other kind is left to the budget alone, which is
+	 * what keeps the light ones filling a wave.
+	 */
+	private static int capped(Kind k, int w) {
+		return switch (k.type) {
+			case "Stalker" -> Math.min(w / 8, 3);
+			case "Idol" -> Math.min(w / 8, 5);
+			case "Gutterman" -> Math.min(w / 15, 5);
+			case "Virtue" -> Math.min(w / 5, 8);
+			default -> Integer.MAX_VALUE;
+		};
 	}
 
 	/**
@@ -572,23 +703,36 @@ final class CyberGrind {
 
 	private static void cleared(ServerPlayer sp) {
 		if (countdown >= 0) return;
+		// a part of the wave is done, the wave is not: the next part comes a moment later, the ground stays as it is,
+		// and nothing pays out until the wave is whole (a part is not a place to farm, nor to heal and recharge) --
+		// only the experience is paid per part, so that the parts together pay what one wave would have
+		if (part < parts) {
+			// whoever went down in it gets back up
+			BossParty.reviveAll();
+			collectDrops(sp);
+			int share = Math.max(1, waveXp / parts);
+			ExperienceOrb.award(sp.level(), sp.position(), share);
+			waveXpPaid += share;
+			// the part is done, the wave is not: say so, and say how much of the wave is left to come
+			hud(String.format(Locale.ROOT, "WAVE %d  (%d/%d) CLEARED", wave, part, parts));
+			countdown = 30;
+			return;
+		}
 		// a cleared wave pays out, more the further in: experience, and P on top of the style it took
-		ExperienceOrb.award(sp.level(), sp.position(), 5 + wave * 3);
+		ExperienceOrb.award(sp.level(), sp.position(), Math.max(1, waveXp - waveXpPaid));
 		int prize = 250 * wave;
 		// everyone fighting it is paid
 		for (ServerPlayer o : sp.level().getServer().getPlayerList().getPlayers()) {
 			if (o == sp || (UcNet.isV1(o) && o.level() == sp.level() && o.position().distanceTo(center) < LEAVE + 20)) {
 				UkProgress.get(o).award(prize);
-				// as the Cyber Grind does: every cleared wave, V1 whole again (its own health, stamina and charges)
-				o.setHealth(o.getMaxHealth());
-				UcNet.send(o, "FULLHEAL");
-				UcNet.send(o, "GRINDRESTORE");
+				// as the Cyber Grind does: every cleared wave, V1 whole again (its own health, stamina and charges) -
+				// half a second later, once the wave's last enemy is really gone, so nothing still in the air undoes it
+				healAt.put(o.getUUID(), ServerOps.ticks() + 10);
+				// and nothing the wave left in the air outlives it
+				UcNet.send(o, "CLEARSHOTS");
 			}
 		}
-		if (wave > UltracraftConfig.grindBest) {
-			UltracraftConfig.grindBest = wave;
-			UltracraftConfig.save();
-		}
+		GrindRecord.reached(sp, wave);
 		// what the wave dropped, often inside the columns that just moved, goes to the shop's ledge while the grid
 		// settles, so it can be picked up before the next wave
 		collectDrops(sp);
@@ -643,20 +787,20 @@ final class CyberGrind {
 		if (bossWave && UkBosses.busy() && owner != null) UkBosses.stop(owner, "the Cyber Grind is over");
 		bossWave = false;
 		int reached = Math.max(0, countdown >= 0 ? wave : wave - 1);
-		if (reached > UltracraftConfig.grindBest) {
-			UltracraftConfig.grindBest = reached;
-			UltracraftConfig.save();
-		}
+		GrindRecord.reached(owner, reached);
 		if (owner != null) UcNet.send(owner, "GRINDCLEAR");
 		hud("THE CYBER GRIND IS OVER: WAVE " + wave);
 		if (sp != null) {
-			sp.displayClientMessage(Component.translatable("The Cyber Grind is over (%s): wave %s, best %s", why, wave, UltracraftConfig.grindBest), false);
+			sp.displayClientMessage(Component.translatable("The Cyber Grind is over (%s): wave %s, best %s", why, wave, GrindRecord.best(sp)), false);
 		}
+		// before leaveArenas: it empties the party, and the music would then be told to stop for nobody
+		sendParty("GRINDMUSIC 0");
 		if (arenaMode) leaveArenas();
+		parts = 1;
+		part = 0;
 		sendState();
 		runner = null;
 	}
-
 	/**
 	 * A player joining in the Grind's arenas with no run of theirs going on there (they left mid-run, or the world
 	 * closed): out to the world's spawn, not left in an empty arena over the void.
@@ -708,7 +852,7 @@ final class CyberGrind {
 	/** GRINDSTATE running wave best spawns in: in, whether this player is in the run (else a shop's button joins it). */
 	private static String stateLine(ServerPlayer sp) {
 		boolean in = running && (isRunner(sp) || (arenaMode ? party.containsKey(sp.getUUID()) : inRun(sp)));
-		return "GRINDSTATE " + (running ? 1 : 0) + " " + wave + " " + UltracraftConfig.grindBest + " " + (UltracraftConfig.ukSpawns ? 1 : 0) + " " + (in ? 1 : 0);
+		return "GRINDSTATE " + (running ? 1 : 0) + " " + wave + " " + GrindRecord.best(sp) + " " + (UltracraftConfig.ukSpawns ? 1 : 0) + " " + (in ? 1 : 0);
 	}
 
 	/** Every V1's shop screens hear how the Grind stands. */

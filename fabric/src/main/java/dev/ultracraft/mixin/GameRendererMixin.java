@@ -51,4 +51,15 @@ public abstract class GameRendererMixin {
 	private void ultracraft$outlineWithHands(CallbackInfoReturnable<Boolean> cir) {
 		if (Ultracraft.active && !Ultracraft.hands) cir.setReturnValue(false);
 	}
+
+	/**
+	 * ULTRAKILL's layer goes into the world target here, after the world's batches are flushed and before the hand is
+	 * drawn: the hand, and then the HUD, end up on top of it instead of being covered by it.
+	 */
+	@Inject(method = "renderItemInHand", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/MultiBufferSource$BufferSource;endBatch()V", shift = At.Shift.AFTER))
+	private void ultracraft$v1LayerUnderTheHand(float partial, boolean renderBlockOutline, org.joml.Matrix4f projection, CallbackInfo ci) {
+		if (!Ultracraft.active && !Ultracraft.steveDrawn) return;
+		if (Ultracraft.active && dev.ultracraft.Movement.sleeping) return;
+		if (UkFrame.updateForOverlay()) UkFrame.drawWorld();
+	}
 }

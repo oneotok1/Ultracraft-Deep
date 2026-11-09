@@ -48,6 +48,9 @@ namespace UltraBridge
             new Harmony("dev.ultracraft.ultrabridge").PatchAll(typeof(Plugin).Assembly);
             MpFxPatches.Apply();
             MobKnock.Apply();
+            // a late Cyber Grind wave has hundreds of audio sources alive, and a source past the mixer's voice limit
+            // is one that gets cut and restarted: raise the limit before anything plays
+            AudioTune.RaiseVoices();
             var go = new GameObject("UltraBridge");
             DontDestroyOnLoad(go);
             go.hideFlags = HideFlags.HideAndDontSave;
@@ -264,7 +267,9 @@ namespace UltraBridge
         bool viewTaken;
         string pendingTp;
         float nextLandTry;
-        bool sawLevelStart;
+        bool prepWaiting;
+        float prepWaitAt;
+        float prepWaitSince;
         string lastScene = "";
         int mcW = 1280, mcH = 720;
 
@@ -296,6 +301,11 @@ namespace UltraBridge
         bool uiMode;
         Vector2 pointer;
         float nextCanvasCheck;
+        // what the last capture found, as name:renderMode: the same scan answers the status line, and walking the
+        // scene for canvases twice a second was pure duplication
+        string canvasReport = "";
+        int audioPlaying;
+        float nextAudioCount;
 
         GameObject blockRoot;
         readonly Dictionary<string, GameObject> blocks = new Dictionary<string, GameObject>();
@@ -315,6 +325,8 @@ namespace UltraBridge
         unsafe byte* frameBase;
         readonly NativeArray<byte>[] colorOut = new NativeArray<byte>[Slots];
         readonly NativeArray<byte>[] maskOut = new NativeArray<byte>[Slots];
+        // the enemy silhouette, kept out of the mapped slots: it is only used to work out where the outline ring is
+        readonly NativeArray<byte>[] silOut = new NativeArray<byte>[Slots];
         int inFlight, nextSeq, publishedSeq;
         // 4: the whole pre-post-processing target, so Minecraft can add ULTRAKILL's additive light (tracers, flashes,
         // glows) that never writes alpha; 1 would be alpha only
@@ -322,6 +334,7 @@ namespace UltraBridge
         int lastHp = -1;
         float nextLoadingNote;
         float forceClickUntil;
+        bool inputHeld;
         /// <summary>-ucnosleep: the Sandbox only hidden, as before (for comparing, or if sleeping it ever breaks something).</summary>
         internal static readonly bool NoSandboxSleep = Array.IndexOf(Environment.GetCommandLineArgs(), "-ucnosleep") >= 0;
         internal static readonly bool LaunchedForMinecraft = Array.IndexOf(Environment.GetCommandLineArgs(), "-ultracraft") >= 0;
@@ -437,7 +450,7 @@ namespace UltraBridge
                 tpReceived = false;
                 viewTaken = false;
                 pendingTp = null;
-                sawLevelStart = false;
+                prepWaiting = false;
                 uiMode = false;
                 sections.Clear();
                 sectionQueue.Clear();
@@ -491,8 +504,17 @@ namespace UltraBridge
                 nextLoadingNote = Time.unscaledTime + 2f;
                 Net.Send("LOADING " + scene);
             }
-            if (scene == "uk_construct" && !levelPrepared && Time.timeSinceLevelLoad > 1f && LevelStarted())
+            if (scene == "uk_construct" && !levelPrepared && !prepWaiting && Time.timeSinceLevelLoad > 0.05f)
             {
+                prepWaiting = true;
+                prepWaitAt = Time.unscaledTime;
+                prepWaitSince = Time.timeSinceLevelLoad;
+            }
+            if (prepWaiting && !levelPrepared && LevelStarted())
+            {
+                Plugin.Log.LogInfo("timing: sandbox level up " + prepWaitSince.ToString("0.00") + " s in, waited "
+                                   + (Time.unscaledTime - prepWaitAt).ToString("0.00") + " s for ULTRAKILL's own start");
+                prepWaiting = false;
                 PrepareLevel();
                 perfLogAt = Time.unscaledTime + 8f;
                 perfCmdUntil = Time.unscaledTime + 20f;
@@ -549,6 +571,7 @@ namespace UltraBridge
                 UpdateFreeze();
                 UpdateDoll();
                 KeepAudio();
+                SendHurtFlash();
                 ClearStrayLocks();
                 UpdateUiMode();
                 if (Time.unscaledTime > nextCanvasCheck)
@@ -753,6 +776,7 @@ namespace UltraBridge
                     if (!levelPrepared) { pendingTp = rest; break; }
                     pendingTp = null;
                     TakeOverView();
+                    mcInWorld = true;
                     var nm = MonoSingleton<NewMovement>.Instance;
                     if (nm == null) break;
                     var p = McToUk(new Vector3(F(a[0]), F(a[1]), F(a[2]))) + Vector3.up * 1.5f;
@@ -1008,6 +1032,36 @@ namespace UltraBridge
                     catch (Exception e) { Plugin.Log.LogDebug("grind restore: " + e.Message); }
                     break;
                 }
+                case "CLEARSHOTS":
+                {
+                    // CLEARSHOTS: a Cyber Grind wave cleared — everything the enemies had in the air goes with them,
+                    // so the wave that starts next is not met by the last one's shots. V1's own are left alone: a
+                    // projectile is the enemies' unless it says it is friendly or a player's (ULTRAKILL's default is
+                    // the enemies'), and a beam has no such flag, but the only ones an enemy fires are the Malicious
+                    // Face's, which goes with the grenade it comes from.
+                    if (!levelPrepared) break;
+                    int gone = 0;
+                    try
+                    {
+                        foreach (var p in FindObjectsOfType<Projectile>())
+                            if (p != null && !p.friendly && !p.playerBullet) { Destroy(p.gameObject); gone++; }
+                        foreach (var g in FindObjectsOfType<Grenade>())
+                            if (g != null && g.enemy) { Destroy(g.gameObject); gone++; }
+                        foreach (var s in FindObjectsOfType<MassSpear>())
+                            if (s != null) { Destroy(s.gameObject); gone++; }
+                        foreach (var v in FindObjectsOfType<VirtueInsignia>())
+                            if (v != null) { Destroy(v.gameObject); gone++; }
+                        foreach (var m in FindObjectsOfType<MortarLauncher>())
+                            if (m != null) { Destroy(m.gameObject); gone++; }
+                        foreach (var b in FindObjectsOfType<BlackHoleProjectile>())
+                            if (b != null) { Destroy(b.gameObject); gone++; }
+                        foreach (var f in FindObjectsOfType<GasolineProjectile>())
+                            if (f != null) { Destroy(f.gameObject); gone++; }
+                    }
+                    catch (Exception e) { Plugin.Log.LogDebug("clear shots: " + e.Message); }
+                    Plugin.Log.LogInfo("wave cleared: " + gone + " enemy shots taken out of the air");
+                    break;
+                }
                 case "DUEL":
                     // DUEL id | DUEL -: our shots hurt that player's V1 (a duel), or nobody's again
                     duelWith = rest.Trim() == "-" ? int.MinValue : int.Parse(rest.Trim());
@@ -1053,6 +1107,10 @@ namespace UltraBridge
                 case "GROUNDFIX":
                     // debug: switch KeepGroundHonest off to see ULTRAKILL's own ground check alone
                     groundFix = rest.Trim() != "0";
+                    break;
+                case "SNEAK":
+                    // Minecraft's sneak key, held: Sneak slows the walk and stops V1 at a ledge (see Sneak.cs)
+                    Sneak.On = rest.Trim() == "1";
                     break;
                 case "PERF":
                     PerfDump();
@@ -1237,15 +1295,17 @@ namespace UltraBridge
             foreach (var cam in Camera.allCameras) if (cam.useOcclusionCulling) cam.useOcclusionCulling = false;
         }
 
-        /// <summary>The Sandbox has really started: loading/menu states are gone and its start sequence (V1 dropping
-        /// into the pit, "pit-falling") has run. Taking over earlier gets V1 thrown back to the spawn and finds
-        /// GunControl not ready.</summary>
+        /// <summary>The Sandbox has really started: loading/menu states are gone and V1 exists. Taking over earlier
+        /// gets V1 thrown back to the spawn and finds GunControl not ready, so the wait is on those two things being
+        /// there - not on a stopwatch. It used to also demand the "pit-falling" state or a fixed number of seconds,
+        /// which cost two full seconds of black screen every time the Sandbox skipped its starting pit.</summary>
         bool LevelStarted()
         {
             var gsm = GameStateManager.Instance;
             if (gsm == null || gsm.IsStateActive("main-menu") || gsm.IsStateActive("pause")) return false;
-            if (gsm.IsStateActive("pit-falling")) sawLevelStart = true;
-            if (!sawLevelStart && Time.timeSinceLevelLoad < 8f) return false;
+            // still on the way down the pit: let it land, or the takeover fires mid-fall and the landing sequence
+            // claims the player back
+            if (gsm.IsStateActive("pit-falling")) return false;
             return FindObjectOfType<NewMovement>() != null;
         }
 
@@ -1749,6 +1809,14 @@ namespace UltraBridge
         void TrackFall(NewMovement nm)
         {
             float y = nm.transform.position.y;
+            if (nm.dead)
+            {
+                // a body on its way down is not a slam waiting to land: forget the height it fell from,
+                // or the landing that follows reads as a fall of hundreds of blocks
+                fallPeak = y;
+                slammed = false;
+                return;
+            }
             if (nm.gc != null && nm.gc.onGround)
             {
                 groundedFor += Time.deltaTime;
@@ -1782,6 +1850,9 @@ namespace UltraBridge
             float drop = SlamDrop(nm);
             fallPeak = nm.transform.position.y;
             slammed = false;
+            // a body falling into the pit lands too, and it fell the whole way down: no blast, no crater,
+            // and above all no shake, which at that drop would be the hardest one the game has for a second
+            if (nm.dead) return;
             if (levelPrepared && drop > 0f) Seismic(nm, drop);
             if (!levelPrepared || !originSet || !Net.Connected || drop < SlamCraterDrop) return;
             var m = UkToMc(nm.gc != null ? nm.gc.transform.position : nm.transform.position);
@@ -1941,8 +2012,18 @@ namespace UltraBridge
                 r.GetPropertyBlock(litBlock, slot.i);
                 litBlock.SetColor(ColorId, slot.baseColor * c);
                 if (fill >= 0f) litBlock.SetVector(AmbientId, ambient);
+                CopyPerRenderer(r, litBlock);
                 r.SetPropertyBlock(litBlock, slot.i);
             }
+        }
+
+        /// <summary>The renderer-wide values (ULTRAKILL's outlines, sand, blessing) into a per-slot block, so the slot
+        /// block doesn't hide them. Copied on every write: they change without the light changing (an enemy's outline
+        /// switches off the moment it is simplified, sand wears off), and a slot block left without them reads 0.</summary>
+        void CopyPerRenderer(Renderer r, MaterialPropertyBlock into)
+        {
+            r.GetPropertyBlock(perRendererBlock);
+            foreach (var id in PerRendererIds) into.SetFloat(id, perRendererBlock.GetFloat(id));
         }
 
         void LitScan(GameObject go, LitObject lc)
@@ -1978,6 +2059,17 @@ namespace UltraBridge
             public int i;
             public Color baseColor;
         }
+
+        // ULTRAKILL's EnemySimplifier writes these on the whole renderer (SetPropertyBlock without a slot index).
+        // A property block set for one material slot replaces the renderer-wide one for that slot, so writing _Color
+        // that way would hide them: _Outline read back 0 and no enemy was outlined while simplifyEnemies was on.
+        // The renderer-wide values are copied into every slot block, which is the only way both can be seen.
+        static readonly int[] PerRendererIds =
+        {
+            Shader.PropertyToID("_Outline"), Shader.PropertyToID("_ForceOutline"),
+            Shader.PropertyToID("_HasSandBuff"), Shader.PropertyToID("_Sanded"), Shader.PropertyToID("_Blessed"),
+        };
+        readonly MaterialPropertyBlock perRendererBlock = new MaterialPropertyBlock();
 
         class LitObject
         {
@@ -2201,17 +2293,23 @@ namespace UltraBridge
             // time by the HUD camera at its own field of view: a ghost twin beside it whenever the FOV was above 90
             const int UiLayer = 5;
             hud.cullingMask = (hud.cullingMask | (1 << UiLayer)) & ~1;
+            var report = new System.Text.StringBuilder();
             foreach (var c in FindObjectsOfType<Canvas>())
             {
-                if (!c.isRootCanvas || c.renderMode != RenderMode.ScreenSpaceOverlay || c.name == "Debug Canvas") continue;
-                c.renderMode = RenderMode.ScreenSpaceCamera;
-                c.worldCamera = hud;
-                c.planeDistance = hud.nearClipPlane + 0.05f;
-                int was = c.gameObject.layer;
-                if (was != UiLayer)
-                    foreach (var t in c.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = UiLayer;
-                Plugin.Log.LogInfo("canvas " + c.name + " (layer " + was + (was != UiLayer ? ", moved to UI" : "") + ", order " + c.sortingOrder + ") now drawn by the HUD camera");
+                if (c.isRootCanvas && c.renderMode == RenderMode.ScreenSpaceOverlay && c.name != "Debug Canvas")
+                {
+                    c.renderMode = RenderMode.ScreenSpaceCamera;
+                    c.worldCamera = hud;
+                    c.planeDistance = hud.nearClipPlane + 0.05f;
+                    int was = c.gameObject.layer;
+                    if (was != UiLayer)
+                        foreach (var t in c.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = UiLayer;
+                    Plugin.Log.LogInfo("canvas " + c.name + " (layer " + was + (was != UiLayer ? ", moved to UI" : "") + ", order " + c.sortingOrder + ") now drawn by the HUD camera");
+                }
+                // read after the move above, so the status line sees the same state the capture left behind
+                if (c.isRootCanvas) report.Append(c.name).Append(':').Append(c.renderMode).Append(' ');
             }
+            canvasReport = report.ToString();
         }
 
         // ------------------------------------------------------------ Minecraft attacks, parries
@@ -2536,10 +2634,24 @@ namespace UltraBridge
             lastUkEnemies.Clear();
             foreach (var kv in ukEnemies) lastUkEnemies[kv.Key] = kv.Value;
             ukEnemies.Clear();
-            var sb = new StringBuilder("UKE ");
+            // the ones still standing: a Grind wave's last three are marked through walls (the same marker another
+            // player gets), so that finding them is not a search
+            var live = new List<EnemyIdentifier>();
             foreach (var eid in tracker.GetCurrentEnemies())
             {
                 if (eid == null || eid.dead || !eid.gameObject.activeInHierarchy || IsProxy(eid) || IsPuppet(eid)) continue;
+                live.Add(eid);
+            }
+            // the wave's last three: once a wave is down to three, those three are marked through walls (the same
+            // marker another player gets) so that finding them is not a search. The count is the wave's own, not
+            // everything in the scene - other enemies standing about are none of the wave's business
+            int waveLeft = 0;
+            if (grindRunning && grindIn) foreach (var kv in grindEnemies) if ((object)kv.Key != null && !kv.Key.dead) waveLeft++;
+            bool markLastFew = waveLeft > 0 && waveLeft <= 3;
+            var sb = new StringBuilder("UKE ");
+            for (int i = 0; i < live.Count; i++)
+            {
+                var eid = live[i];
                 int id = eid.GetInstanceID();
                 ukEnemies[id] = eid;
                 var b = EnemyBounds(eid);
@@ -2554,7 +2666,9 @@ namespace UltraBridge
                   .Append(',').Append(S(w)).Append(',').Append(S(h)).Append(',').Append(S(eid.health))
                   // what the other players' ULTRAKILLs need to show it as a puppet
                   .Append(',').Append(PuppetKey(eid)).Append(',').Append(S(eid.transform.eulerAngles.y)).Append(',').Append(AnimState(eid))
-                  .Append(',').Append(S(maxHp)).Append(';');
+                  .Append(',').Append(S(maxHp))
+                  // 1: one of the wave's last three (marked through walls)
+                  .Append(',').Append(markLastFew && grindEnemies.ContainsKey(eid) ? "1" : "0").Append(';');
             }
             Net.Send(sb.ToString());
             // the ones that died since: Minecraft drops their experience (a destroyed enemy's fields still read: one
@@ -2881,6 +2995,19 @@ namespace UltraBridge
             if (AudioListener.pause != mcPaused) AudioListener.pause = mcPaused;
         }
 
+        /// <summary>The red the game puts over the screen when V1 is hit. It lives in the HUD camera's pass, which is
+        /// the mask side of the shared frame, so Minecraft never sees it in the colour it draws - the alpha is sent on
+        /// its own and the overlay in Minecraft's HUD paints it back.</summary>
+        void SendHurtFlash()
+        {
+            int now = Mathf.Clamp(Mathf.RoundToInt(Shader.GetGlobalColor("_HurtScreenColor").a * 255f), 0, 255);
+            if (now == hurtFlashSent) return;
+            hurtFlashSent = now;
+            Net.Send("HURT " + now);
+        }
+
+        int hurtFlashSent = -1;
+
         bool mcPaused;
 
         // what ULTRAKILL's own pause switches off besides time (V1's movement, camera and guns), as it was
@@ -2891,6 +3018,10 @@ namespace UltraBridge
             if (on == mcPaused) return;
             mcPaused = on;
             AudioListener.pause = on;
+            // a pause is not a cut: the song picks up where the pause found it
+            var music = MonoSingleton<MusicManager>.Instance;
+            if (on) SaveAt(music);
+            else ResumeAt(music);
             var nm = levelPrepared ? MonoSingleton<NewMovement>.Instance : null;
             var cc = levelPrepared ? MonoSingleton<CameraController>.Instance : null;
             var gc = levelPrepared ? MonoSingleton<GunControl>.Instance : null;
@@ -3509,7 +3640,21 @@ namespace UltraBridge
 
         void InjectInput()
         {
-            if (!Net.Connected) return;
+            if (!Net.Connected)
+            {
+                // nothing is being fed in any more, but the devices keep the last state they were given: releasing
+                // them here is what stops a held trigger from firing forever after Minecraft goes away
+                if (inputHeld)
+                {
+                    inputHeld = false;
+                    held.Clear();
+                    buttons = 0;
+                    if (kb != null) InputSystem.QueueStateEvent(kb, new KeyboardState());
+                    if (mouse != null) InputSystem.QueueStateEvent(mouse, new MouseState());
+                }
+                return;
+            }
+            inputHeld = true;
             if (kb == null)
             {
                 InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
@@ -3655,9 +3800,29 @@ namespace UltraBridge
                 }
                 var co = colorOut[job.slot];
                 var mo = maskOut[job.slot];
+                // the outline ring is missing from the mask's alpha, so work out where it is and put it back
+                // the ring is written straight into the mask's alpha, which only exists in the 4-byte format
+                int outlineRadius = job.maskBpp == 4 ? OutlineMask.Radius() : 0;
+                var sil = outlineRadius > 0 ? OutlineMask.Begin(pp) : null;
+                if (sil != null && (sil.width != w || sil.height != h)) sil = null;
+                var so = silOut[job.slot];
+                if (sil != null)
+                {
+                    if (so.IsCreated && so.Length < w * h * 4)
+                    {
+                        so.Dispose();
+                        so = default;
+                    }
+                    if (!so.IsCreated) so = new NativeArray<byte>(w * h * 4, Allocator.Persistent);
+                    silOut[job.slot] = so;
+                    job.silRadius = outlineRadius;
+                    job.wantSil = true;
+                    job.need = 3;
+                }
                 inFlight++;
                 AsyncGPUReadback.RequestIntoNativeArray(ref co, finalRT, 0, TextureFormat.RGBA32, r => ReadbackDone(job, r, false));
                 AsyncGPUReadback.RequestIntoNativeArray(ref mo, mask, 0, job.maskBpp == 1 ? TextureFormat.Alpha8 : TextureFormat.RGBA32, r => ReadbackDone(job, r, true));
+                if (job.wantSil) AsyncGPUReadback.RequestIntoNativeArray(ref so, sil, 0, TextureFormat.RGBA32, r => ReadbackDone(job, r, false, true));
             }
         }
 
@@ -3669,12 +3834,19 @@ namespace UltraBridge
             public bool failed;
             // eye x y z (Minecraft), yaw, pitch, roll, fov at the moment the frame was drawn
             public float[] pose;
+            // outline ring: the enemy silhouette comes back on its own request and only feeds the mask's alpha
+            public bool wantSil, silLost;
+            public int silRadius;
+            // how many readbacks this frame waits for before it can be published
+            public int need = 2;
         }
 
         /// <summary>Both halves of a frame have landed in its slot: publish it (size, slot, mask format, then seq).</summary>
-        unsafe void ReadbackDone(Readback job, AsyncGPUReadbackRequest r, bool isMask)
+        unsafe void ReadbackDone(Readback job, AsyncGPUReadbackRequest r, bool isMask, bool isSil = false)
         {
-            if (r.hasError)
+            // a missing silhouette only costs the ring, so the frame still goes out
+            if (r.hasError && isSil) job.silLost = true;
+            if (r.hasError && !isSil)
             {
                 job.failed = true;
                 if (isMask && job.maskBpp == 1 && maskBpp == 1)
@@ -3683,9 +3855,10 @@ namespace UltraBridge
                     Plugin.Log.LogWarning("Alpha8 readback not supported here; sending the mask as RGBA");
                 }
             }
-            if (++job.done < 2) return;
+            if (++job.done < job.need) return;
             inFlight--;
             if (job.failed || job.seq <= publishedSeq) return;
+            if (job.wantSil && !job.silLost) OutlineMask.Merge(maskOut[job.slot], silOut[job.slot], job.w, job.h, job.silRadius);
             int* hdr = (int*)frameBase;
             Thread.MemoryBarrier();
             hdr[1] = job.w;
@@ -3740,8 +3913,8 @@ namespace UltraBridge
             var im = levelPrepared ? MonoSingleton<InputManager>.Instance : null;
             string move = "?";
             try { move = im != null ? im.InputSource.Move.ReadValue<Vector2>().ToString() : "no InputManager"; } catch (Exception e) { move = "err " + e.Message; }
-            var cs = new System.Text.StringBuilder();
-            foreach (var c in FindObjectsOfType<Canvas>()) if (c.isRootCanvas) cs.Append(c.name).Append(':').Append(c.renderMode).Append(' ');
+            // the capture above walks the scene for canvases once a second already, and its report is read here
+            string cs = canvasReport;
             var cc = levelPrepared ? MonoSingleton<CameraController>.Instance : null;
             string cam = cc == null ? "none" : (cc.isActiveAndEnabled ? "on" : "OFF") + (cc.nm != null ? "" : " NO-V1") + " rot=(" + cc.rotationX.ToString("0.0") + "," + cc.rotationY.ToString("0.0") + ") euler=" + (cc.cam != null ? cc.cam.transform.eulerAngles.ToString("0.0") : "?");
             Plugin.Log.LogInfo("status: fps=" + gameFrames + " look=" + lookTotal.ToString("0") + " cam=" + cam + " camLocked=" + GameStateManager.Instance.CameraLocked + " states=[" + ActiveStates() + "]" + " conn=" + Net.Connected + " focused=" + Application.isFocused + " screen=" + Screen.width + "x" + Screen.height + " " + Screen.fullScreenMode
@@ -3829,11 +4002,19 @@ namespace UltraBridge
             Plugin.Log.LogInfo(sb.ToString());
         }
 
-        static int PlayingSources()
+        /// <summary>How many audio sources are playing. The count only shows up in the status line, so it is taken every
+        /// few seconds and remembered: walking every audio source in the scene once a second, in a late Cyber Grind wave
+        /// that is hundreds of them, was a scan nobody was reading that fast.</summary>
+        int PlayingSources()
         {
-            int n = 0;
-            foreach (var s in FindObjectsOfType<AudioSource>()) if (s.isPlaying) n++;
-            return n;
+            if (Time.unscaledTime >= nextAudioCount)
+            {
+                nextAudioCount = Time.unscaledTime + 5f;
+                int n = 0;
+                foreach (var s in FindObjectsOfType<AudioSource>()) if (s.isPlaying) n++;
+                audioPlaying = n;
+            }
+            return audioPlaying;
         }
 
         IEnumerator Snap()

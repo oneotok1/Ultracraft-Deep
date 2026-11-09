@@ -2,7 +2,6 @@ package dev.ultracraft;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -68,7 +67,15 @@ final class Lighting {
 	private static void append(StringBuilder sb, String id, Lightmap lm, ClientLevel level, double x, double y, double z) {
 		BlockPos pos = BlockPos.containing(x, y, z);
 		Vector3f c = lm.color(level.getBrightness(LightLayer.BLOCK, pos), level.getBrightness(LightLayer.SKY, pos));
-		sb.append(id).append(String.format(Locale.ROOT, ",%.3f,%.3f,%.3f;", c.x, c.y, c.z));
+		sb.append(id).append(',');
+		f3(sb, c.x).append(',');
+		f3(sb, c.y).append(',');
+		f3(sb, c.z).append(';');
+	}
+
+	/** Three decimals without String.format: this runs for every lit thing, every other tick. */
+	private static StringBuilder f3(StringBuilder sb, double v) {
+		return sb.append(Math.round(v * 1000.0) / 1000.0);
 	}
 
 	/** Minecraft's lightmap (LightTexture's inputs, lightmap.fsh's sums) for one frame. */

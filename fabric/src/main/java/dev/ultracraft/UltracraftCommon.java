@@ -184,6 +184,8 @@ public final class UltracraftCommon implements ModInitializer {
 				e.lastSeen = now;
 			}
 			if (a.length > 10) e.setLook(a[8], Float.parseFloat(a[9]), Integer.parseInt(a[10]));
+			// one of the wave's last three: marked through walls (newer bridge; absent = not marked)
+			e.setLastFew(a.length > 12 && a[12].equals("1"));
 			// ULTRAKILL's own health (and, with a newer bridge, its max) — shown by Jade on the UK_TO_MC scale
 			if (ukHp >= 0f) e.setUkHealth(ukHp, ukMax);
 			// with void death on, one of the Grind's enemies that fell off the edge dies like V1 does, instead of

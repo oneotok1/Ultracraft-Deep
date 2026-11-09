@@ -109,32 +109,19 @@ final class GrindArenas {
 		new Def("P: PRIME SANCTUM", "PRIME SANCTUM", PRIME),
 		new Def("HEAVEN", "HEAVEN", HEAVEN));
 
-	/** ULTRAKILL's own skies (its Addressables' materials), by the layer a look is after. */
-	private static final java.util.Map<String, String[]> SKIES = java.util.Map.ofEntries(
-		java.util.Map.entry("CYBER GRIND", new String[] {"EndlessSky"}),
-		java.util.Map.entry("PRELUDE", new String[] {"RedSky", "RedSky3", "DuskSky"}),
-		java.util.Map.entry("LIMBO", new String[] {"SkyBlue", "DaySky", "DaySky 2", "EveningSky"}),
-		java.util.Map.entry("LUST", new String[] {"../LustSky", "../LustSky 1", "../LustSky 2"}),
-		java.util.Map.entry("GLUTTONY", new String[] {"RedSky2", "RedSky"}),
-		java.util.Map.entry("GREED", new String[] {"GreedSky", "GreedSky2", "GreedSky3", "GreedSky4", "GreedSky5"}),
-		java.util.Map.entry("WRATH", new String[] {"../Environment/Layer 5/OvercastSky", "FogCoveredSky", "NightSky2"}),
-		java.util.Map.entry("HERESY", new String[] {"NightSky1", "NightSky3"}),
-		java.util.Map.entry("VIOLENCE", new String[] {"ViolenceSky", "ViolenceSky3", "ViolenceSky4"}),
-		java.util.Map.entry("FRAUD", new String[] {"FraudCity_SkyMat_Night", "FraudCity_SkyMat"}),
-		java.util.Map.entry("TREACHERY", new String[] {"SpaceSky", "NightSky4"}),
-		java.util.Map.entry("PRIME SANCTUM", new String[] {"NightSky5", "SpaceSky"}),
-		java.util.Map.entry("HEAVEN", new String[] {"DawnSky", "EveningSky 3"}));
-
 	/** A sky for look index: the address of one of its layer's ULTRAKILL skybox materials, picked at random. */
 	static String sky(int index, RandomSource random) {
-		return skyFor(def(index).layer, random);
+		return skyFor(def(index).layer(), random);
 	}
 
-	/** One of a layer's ULTRAKILL skies (its material's address), picked at random. */
+	/**
+	 * One of a layer's ULTRAKILL skies (its material's address), picked at random from the ones the player has left
+	 * on. A layer whose own are all off falls back to any sky that is on, and with everything off it takes any at all
+	 * rather than leaving the grid without a sky.
+	 */
 	static String skyFor(String layer, RandomSource random) {
-		String[] all = SKIES.getOrDefault(layer, new String[] {"DuskSky"});
-		String name = all[random.nextInt(all.length)];
-		return name.startsWith("../") ? "Assets/Materials/" + name.substring(3) + ".mat" : "Assets/Materials/Skyboxes/" + name + ".mat";
+		List<GrindStyleRules.Sky> all = GrindStyleRules.skiesOn(layer);
+		return all.get(random.nextInt(all.size())).address();
 	}
 
 	/** The arena as built: its look, its middle, its half-width, where V1 lands, and its shop. */
@@ -195,8 +182,6 @@ final class GrindArenas {
 
 	/** ULTRAKILL's own patterns (CGPATTERNS, from UltraBridge): its numbered ones (its order), then the rest it ships. */
 	private static volatile List<Pattern> fromUltrakill = List.of();
-	/** How many of the patterns at the start of patterns() go in order (ULTRAKILL's 01, 02...) before the shuffle. */
-	private static int inOrder;
 
 	/** CGPATTERNS name|heights|prefabs;... (rows joined with '/'). */
 	static synchronized void ultrakillPatterns(String data) {
@@ -221,10 +206,6 @@ final class GrindArenas {
 	static synchronized List<Pattern> patterns() {
 		if (patterns != null) return patterns;
 		List<Pattern> all = new ArrayList<>();
-		inOrder = 0;
-		for (Pattern p : fromUltrakill) {
-			if (p.name.matches("PATTERN \\d+.*")) inOrder++;
-		}
 		// numbered first (sorted), then the community's
 		for (Pattern p : fromUltrakill) if (p.name.matches("PATTERN \\d+.*")) all.add(p);
 		for (Pattern p : fromUltrakill) if (!p.name.matches("PATTERN \\d+.*")) all.add(p);
@@ -266,6 +247,9 @@ final class GrindArenas {
 
 	/** Each block column's height now and where it's going (half blocks over Y), columns 0..47 each way. */
 	private static final int[][] cur = new int[SIZE][SIZE], tgt = new int[SIZE][SIZE];
+	/** Where each column stood when the wave's slide began, and how far through that slide the grid is. */
+	private static final int[][] from = new int[SIZE][SIZE];
+	private static int slideTicks, slideTotal;
 	private static boolean built, moving;
 	private static ServerLevel gridLevel;
 	private static Def look = ARENAS.get(0);
@@ -302,20 +286,19 @@ final class GrindArenas {
 		clear(level);
 		patternOrder.clear();
 		List<Pattern> all = patterns();
-		// ULTRAKILL's own run first, in its order, then everything else shuffled
-		List<Integer> rest = new ArrayList<>();
-		for (int i = 0; i < all.size(); i++) {
-			if (i < inOrder) patternOrder.add(i);
-			else rest.add(i);
-		}
-		Collections.shuffle(rest, new java.util.Random(rnd.nextLong()));
-		patternOrder.addAll(rest);
+		// every pattern of the run in one shuffled pile. ULTRAKILL's numbered ones used to lead in numeric order,
+		// so the opening waves of every run were the same 01, 02, 03 - recognisable however the tail was rolled
+		List<Integer> order = new ArrayList<>();
+		for (int k = 0; k < all.size(); k++) order.add(k);
+		Collections.shuffle(order, new java.util.Random(rnd.nextLong()));
+		patternOrder.addAll(order);
 		patternPos = -1;
 		pattern = PatternRules.flat();
 		setTargets(pattern);
 		for (int x = 0; x < SIZE; x++) {
 			for (int z = 0; z < SIZE; z++) {
 				cur[x][z] = tgt[x][z];
+				from[x][z] = tgt[x][z];
 				column(level, x, z, BASE, top(MAX_H) + 1);
 			}
 		}
@@ -347,7 +330,14 @@ final class GrindArenas {
 		if (all.isEmpty()) return null;
 		patternPos = (patternPos + 1) % patternOrder.size();
 		pattern = all.get(patternOrder.get(patternPos));
+		for (int x = 0; x < SIZE; x++) for (int z = 0; z < SIZE; z++) from[x][z] = cur[x][z];
 		setTargets(pattern);
+		// the longest climb sets the pace: every column is there in the same time, however far it has to go
+		int furthest = 0;
+		for (int x = 0; x < SIZE; x++) for (int z = 0; z < SIZE; z++) furthest = Math.max(furthest, Math.abs(tgt[x][z] - from[x][z]));
+		slideTicks = 0;
+		// about a block a tick for the tallest climb, a little longer the further it goes; never a crawl
+		slideTotal = Math.min(80, 12 + furthest);
 		if (look.p == CYBER) {
 			accent = CYBER_ACCENTS[Math.floorMod(wave, CYBER_ACCENTS.length)];
 			// the dots of columns that won't move take the new colour now (the moving ones as they go)
@@ -358,7 +348,12 @@ final class GrindArenas {
 		return pattern.name;
 	}
 
-	/** Every server tick: each column that isn't at its height yet moves half a block towards it (ten blocks a second). */
+	/**
+	 * Every server tick: each column takes the height the slide has reached, easing in and out so the grid leaves and
+	 * meets its pattern instead of snapping through it. Half a block is as fine as a Minecraft column goes, so the
+	 * slide is slowed past one half block a tick on purpose: at any tick only part of the grid is stepping, and the
+	 * surface ripples rather than jumping as a whole.
+	 */
 	static void tick(MinecraftServer server) {
 		if (!built || gridLevel == null) return;
 		if (!moving) {
@@ -366,15 +361,18 @@ final class GrindArenas {
 			unstick(server);
 			return;
 		}
-		boolean still = false;
+		slideTicks++;
+		float p = Math.min(1f, slideTicks / (float) slideTotal);
+		float s = p * p * (3f - 2f * p);
+		boolean still = slideTicks < slideTotal;
 		for (int x = 0; x < SIZE; x++) {
 			for (int z = 0; z < SIZE; z++) {
-				int c = cur[x][z], t = tgt[x][z];
-				if (c == t) continue;
-				int n = c + Integer.signum(t - c);
+				int a = from[x][z], t = tgt[x][z];
+				int n = still ? a + Math.round((t - a) * s) : t;
+				int c = cur[x][z];
+				if (n == c) continue;
 				cur[x][z] = n;
 				column(gridLevel, x, z, Math.min(top(c), top(n)) - 2, Math.max(top(c), top(n)) + 1);
-				if (n != t) still = true;
 			}
 		}
 		unstick(server);
@@ -585,6 +583,28 @@ final class GrindArenas {
 	/** Below this, someone has fallen off the grid (its deepest pits are above it). */
 	static double voidY() {
 		return Y + MIN_H / 2.0 - 3;
+	}
+
+	/**
+	 * Where to put someone back after a fall: the surface of the column under a spot on the grid, not the grid's own
+	 * base height. The base is only where a flat pattern sits; on a raised one the middle is buried, and landing
+	 * there put the player inside blocks, from where {@link #lift} pushed him up onto the surface, and off the edge
+	 * again - climbing the arena a column at a time until there was nothing left to climb.
+	 */
+	static Vec3 standing(Vec3 p) {
+		int x = Mth.floor(p.x), z = Mth.floor(p.z);
+		if (!built || gridLevel == null || !inGrid(x, z)) return p;
+		double surface = Y;
+		BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+		for (int y = Mth.floor(Y) + MAX_H / 2 + 2; y > Mth.floor(Y) - 2; y--) {
+			BlockState state = gridLevel.getBlockState(m.set(x, y, z));
+			if (state.isAir()) continue;
+			VoxelShape shape = state.getCollisionShape(gridLevel, m);
+			if (shape.isEmpty()) continue;
+			surface = y + shape.max(Direction.Axis.Y);
+			break;
+		}
+		return new Vec3(p.x, Math.max(surface, Y), p.z);
 	}
 
 	/** The run left the grid: nothing moves any more. */

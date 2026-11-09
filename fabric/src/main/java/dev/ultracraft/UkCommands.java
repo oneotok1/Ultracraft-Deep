@@ -222,7 +222,27 @@ final class UkCommands {
 					if (!CyberGrind.isRunner(player(c)) && !cheats(c.getSource())) return fail(c, "It's not your run: /uc grind leave to go back.");
 					CyberGrind.stop(player(c), "stopped");
 					return say(c, "The Cyber Grind stopped.");
-				})));
+				}))
+				// straight to a wave, from wherever you are: starts a run of your own if none is on. As the Cyber Grind's
+				// own wave picker does, only the waves this world has reached -- but any of them, not every fifth one.
+				.then(Commands.literal("wave").then(Commands.argument("number", IntegerArgumentType.integer(1, 999)).executes(c -> {
+					ServerPlayer sp = player(c);
+					int n = IntegerArgumentType.getInteger(c, "number");
+					boolean free = cheats(c.getSource());
+					int best = GrindRecord.best(sp);
+					if (!free && n > best) {
+						return fail(c, best < 1
+							? "The Cyber Grind hasn't been reached yet: wave 1 is as far as it goes without cheats."
+							: "No further than the Cyber Grind has been reached: wave " + best + " is the best here.");
+					}
+					if (CyberGrind.running) {
+						if (!CyberGrind.isRunner(sp) && !free) return fail(c, "It's not your run.");
+						if (!CyberGrind.jumpTo(sp, n)) return fail(c, "Couldn't get to wave " + n + ".");
+						return say(c, "The Cyber Grind: on to wave " + n + ".");
+					}
+					if (!CyberGrind.startArenas(sp, -1, n)) return fail(c, "Become V1 first.");
+					return say(c, "Into the Cyber Grind, at wave " + n + ".");
+				}))));
 		var node = d.register(root);
 		d.register(Commands.literal("ultracraft").executes(c -> help(c)).redirect(node));
 	}
