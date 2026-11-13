@@ -19,6 +19,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -709,10 +710,10 @@ final class CyberGrind {
 		if (part < parts) {
 			// whoever went down in it gets back up
 			BossParty.reviveAll();
-			collectDrops(sp);
 			int share = Math.max(1, waveXp / parts);
 			ExperienceOrb.award(sp.level(), sp.position(), share);
 			waveXpPaid += share;
+			collectDrops(sp);
 			// the part is done, the wave is not: say so, and say how much of the wave is left to come
 			hud(String.format(Locale.ROOT, "WAVE %d  (%d/%d) CLEARED", wave, part, parts));
 			countdown = 30;
@@ -759,24 +760,72 @@ final class CyberGrind {
 		sendState();
 	}
 
-	/** The items the wave dropped, moved to the shop's ledge (the little platform by the terminal) before the next
-	 * wave: they often sit inside the columns, which move through where they lie. */
+	/** The items and experience the wave dropped, moved to the shop's ledge (the little platform by the terminal)
+	 * before the next wave: they often sit inside the columns, which move through where they lie. */
 	private static void collectDrops(ServerPlayer sp) {
 		if (!arenaMode) return;
 		ServerLevel level = sp.level();
 		if (level.dimension() != GrindArenas.DIMENSION) return;
 		Vec3 at = GrindArenas.ledgeAnchor();
 		if (at == null) return;
+		int moved = moveDrops(level, level, at.x, at.y, at.z);
+		if (moved > 0) {
+			// the actionbar, over the wave's own broadcast: it is a note about this wave, and it goes when the next
+			// thing the HUD says does
+			sp.displayClientMessage(Component.translatable("The wave's drops were moved to the shop's ledge."), true);
+			org.slf4j.LoggerFactory.getLogger("ultracraft").info("Cyber Grind: {} drop(s) moved to the shop's ledge", moved);
+		}
+	}
+
+	/** What the run left lying on the grid: its items and its experience orbs, to (x, y, z) in the given level. */
+	private static int moveDrops(ServerLevel from, ServerLevel to, double x, double y, double z) {
+		if (from == null || to == null) return 0;
 		AABB box = new AABB(GrindArenas.OX - GrindArenas.HALF - 4, GrindArenas.Y - 20, GrindArenas.OZ - GrindArenas.HALF - 4,
 			GrindArenas.OX + GrindArenas.HALF + 4, GrindArenas.Y + 40, GrindArenas.OZ + GrindArenas.HALF + 12);
 		int moved = 0;
-		for (net.minecraft.world.entity.item.ItemEntity item : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box)) {
+		// what already lies at the target is left alone: moving it again would only reset its pickup delay (and make
+		// a wave that dropped nothing look as if it had)
+		double clear = 4.0;
+		for (ItemEntity item : from.getEntitiesOfClass(ItemEntity.class, box)) {
 			if (item.isRemoved()) continue;
-			item.teleportTo(at.x, at.y, at.z);
+			if (item.position().distanceToSqr(x, y, z) < clear * clear) continue;
+			item.teleportTo(to, x, y, z, Set.of(), item.getYRot(), item.getXRot(), false);
 			item.setDefaultPickUpDelay();
 			moved++;
 		}
-		if (moved > 0) org.slf4j.LoggerFactory.getLogger("ultracraft").info("Cyber Grind: {} drop(s) moved to the shop's ledge", moved);
+		for (ExperienceOrb orb : from.getEntitiesOfClass(ExperienceOrb.class, box)) {
+			if (orb.isRemoved()) continue;
+			if (orb.position().distanceToSqr(x, y, z) < clear * clear) continue;
+			orb.teleportTo(to, x, y, z, Set.of(), orb.getYRot(), orb.getXRot(), false);
+			moved++;
+		}
+		return moved;
+	}
+
+	/** The run is over: what it left on the grid goes to where its V1 comes back out, so a death or a leave does not
+	 * strand it in the Grind's own dimension. */
+	private static void sendDropsHome(ServerPlayer owner) {
+		if (server == null) return;
+		ServerPlayer to = owner;
+		if (to == null || !party.containsKey(to.getUUID())) {
+			to = null;
+			for (UUID id : party.keySet()) {
+				ServerPlayer o = server.getPlayerList().getPlayer(id);
+				if (o != null) {
+					to = o;
+					break;
+				}
+			}
+		}
+		if (to == null) return;
+		// where they came in: the same spot leaveArenas puts them back on
+		Return r = party.get(to.getUUID());
+		if (r == null) return;
+		Vec3 at = r.at();
+		ServerLevel back = server.getLevel(r.level());
+		if (back == null) back = server.overworld();
+		int moved = moveDrops(GrindArenas.level(server), back, at.x, at.y, at.z);
+		if (moved > 0) to.displayClientMessage(Component.translatable("What the run left behind waits where you came in."), false);
 	}
 
 	/** The run is over: V1 died, left, became Steve, or pressed Leave. */
@@ -790,9 +839,13 @@ final class CyberGrind {
 		GrindRecord.reached(owner, reached);
 		if (owner != null) UcNet.send(owner, "GRINDCLEAR");
 		hud("THE CYBER GRIND IS OVER: WAVE " + wave);
+		// the broadcast says it is over; the chat line says how it went and how the run stands
 		if (sp != null) {
-			sp.displayClientMessage(Component.translatable("The Cyber Grind is over (%s): wave %s, best %s", why, wave, GrindRecord.best(sp)), false);
+			sp.displayClientMessage(Component.translatable("Wave %s, best %s (%s).", wave, GrindRecord.best(sp), why), false);
 		}
+		// what the run left on the grid goes back with whoever ran it: dying or leaving would otherwise leave it in
+		// the void dimension, where nobody comes back for it
+		if (arenaMode) sendDropsHome(owner);
 		// before leaveArenas: it empties the party, and the music would then be told to stop for nobody
 		sendParty("GRINDMUSIC 0");
 		if (arenaMode) leaveArenas();

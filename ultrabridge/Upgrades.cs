@@ -297,14 +297,32 @@ namespace UltraBridge
     [HarmonyPatch(typeof(WeaponCharges), nameof(WeaponCharges.Charge))]
     static class UpgradedRecharge
     {
+        /// <summary>Where the Jackhammer's overheat starts in the state array, after the fifteen single charges.</summary>
+        const int HeatBase = 15;
+
         static void Prefix(WeaponCharges __instance, out float[] __state)
         {
             var w = __instance;
-            __state = new[]
-            {
-                w.rev0charge, w.rev1charge, w.rev2charge, w.shoAltNadeCharge, w.shoSawCharge, w.naiMagnetCharge, w.naiZapperRecharge,
-                w.naiHeatsinks, w.naiSawHeatsinks, w.naiAmmo, w.naiSaws, w.raicharge, w.rocketCannonballCharge, w.rocketNapalmFuel, w.rocketFreezeTime
-            };
+            // the Jackhammer's overheat, one per shotgun variant, rides along after the charges: it is an array,
+            // so it has to be copied, and Harmony allows one __state and no other out parameter of its own
+            var heat = w.shoaltcooldowns;
+            __state = new float[HeatBase + heat.Length];
+            __state[0] = w.rev0charge;
+            __state[1] = w.rev1charge;
+            __state[2] = w.rev2charge;
+            __state[3] = w.shoAltNadeCharge;
+            __state[4] = w.shoSawCharge;
+            __state[5] = w.naiMagnetCharge;
+            __state[6] = w.naiZapperRecharge;
+            __state[7] = w.naiHeatsinks;
+            __state[8] = w.naiSawHeatsinks;
+            __state[9] = w.naiAmmo;
+            __state[10] = w.naiSaws;
+            __state[11] = w.raicharge;
+            __state[12] = w.rocketCannonballCharge;
+            __state[13] = w.rocketNapalmFuel;
+            __state[14] = w.rocketFreezeTime;
+            for (int i = 0; i < heat.Length; i++) __state[HeatBase + i] = heat[i];
         }
 
         static void Postfix(WeaponCharges __instance, float[] __state)
@@ -323,6 +341,13 @@ namespace UltraBridge
             {
                 w.shoAltNadeCharge = Up(__state[3], w.shoAltNadeCharge, r, 1f);
                 w.shoSawCharge = Up(__state[4], w.shoSawCharge, r, 1f);
+                // and the Jackhammer's overheat (ShotgunHammer parks seven seconds in here when it burns out)
+                for (int i = 0; i < w.shoaltcooldowns.Length; i++)
+                {
+                    int s = HeatBase + i;
+                    if (s >= __state.Length) break;
+                    w.shoaltcooldowns[i] = Down(__state[s], w.shoaltcooldowns[i], r);
+                }
             }
             r = Bridge.Rate("nai.charge");
             if (r > 1f)

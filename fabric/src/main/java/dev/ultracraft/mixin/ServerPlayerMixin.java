@@ -23,6 +23,9 @@ public abstract class ServerPlayerMixin {
 	private void ultracraft$hurtV1(ServerLevel level, DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
 		ServerPlayer self = (ServerPlayer) (Object) this;
 		if (!UcNet.isV1(self)) return;
+		// creative and spectator: Minecraft would turn every one of these away itself, and V1's health lives on the
+		// other side where nothing asks it, so nothing here may reach him either
+		if (self.isCreative() || self.isSpectator()) return;
 		// a swing Minecraft is about to resolve over: armour, absorption hearts or a raised shield can eat the whole
 		// thing, and the tail below reports it to ULTRAKILL as the flash-with-no-damage it still was
 		V1Damage.arm(self, source);

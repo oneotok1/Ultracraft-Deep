@@ -27,8 +27,8 @@ What changed in each version: [changelog](CHANGELOG.md), and every version has i
 ## Settings
 
 **Ultracraft...** (title screen, pause menu, Options, or `/uc settings`) has a page for each of these:
-- **Enemies & Bosses**: Minecraft's mobs, ULTRAKILL's enemies, bosses (the time between them, their difficulty, how often they bring traits), arenas, enemies as Steve, and the **Mob Damage Filter** to configure which mobs ULTRAKILL can touch.
-- **Gameplay**: becoming V1, what breaks blocks, blasts putting fires out, extra blood as health, impact frames, starting ULTRAKILL with Minecraft.
+- **Enemies & Bosses**: Minecraft's mobs, ULTRAKILL's enemies, bosses (the time between them, their difficulty, how often they bring traits), arenas, enemies as Steve, the **Mob Damage Filter** to configure which mobs ULTRAKILL can touch, the **Enemy Spawn Filter** to choose which of ULTRAKILL's enemies turn up in the dark, and the **Boss Trait Filter** to keep traits off a boss's random draw.
+- **Gameplay**: becoming V1, what breaks blocks, blasts putting fires out, fall damage on flung mobs, extra blood as health, impact frames, starting ULTRAKILL with Minecraft.
 - **Shop & Rewards**: style rewards, the style streak text display, the OP Shop, the sharp shop screen.
 - **Performance**: ULTRAKILL's resolution and frame rate, frame lock step, low-latency frames.
 - **Music**: ULTRAKILL's fight music, boss themes, calm music, volumes.
@@ -46,7 +46,9 @@ ULTRAKILL's enemies spawn in the dark, and which ones depends on where you are:
 - in the Nether, demons by biome: souls in soul sand valleys, flesh in crimson forests, industry in basalt deltas;
 - in the End, angels (Virtues, Powers, Providence).
 
-ULTRAKILL's enemies fight Minecraft's hostile mobs too. A swing, stomp, Virtue pillar or blast that would launch V1 launches a mob just as far, and a mob knocked about by them takes no fall damage.
+The **Enemy Spawn Filter** (under Enemies & Bosses) decides which of them may turn up at all; bosses and the Cyber Grind's waves are not affected by it.
+
+ULTRAKILL's enemies fight Minecraft's hostile mobs too. A swing, stomp, Virtue pillar or blast that would launch V1 launches a mob just as far, and V1's own blasts throw them too. A mob knocked about like that takes fall damage when it comes down, so a hard enough launch is lethal — **Knockback Fall Damage** (Gameplay, on by default) turns that off and leaves ULTRAKILL's own rule, where nothing hurts a flung mob until it lands.
 
 **V1's health scales with Minecraft's.** V1's 100 health (200 on a full bar) scales directly with your Minecraft maximum health: 20 health corresponds to 100, and a Health Boost or heart-increasing mods scale V1's pool with it (up to 4x V1's own full health: 400 at 100, 800 on Harmless). Absorption hearts from golden apples or potions render as a darker segment on top of the ULTRAKILL health bar. Both Minecraft and ULTRAKILL hits draw from this absorption pool. With **Extra Blood Counts as Health Cap** enabled (Gameplay settings, on by default), healing and blood absorption refill the yellow hearts up to the cap; with it off, they act as a damage-soaking shield only.
 

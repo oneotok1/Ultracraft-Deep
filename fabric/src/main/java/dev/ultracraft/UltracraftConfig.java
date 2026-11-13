@@ -130,6 +130,9 @@ public final class UltracraftConfig {
 	 * collider order happened to reach (a sawblade and an enemy's parryable blow would otherwise swallow
 	 * each other). Off: ULTRAKILL's own order, one parry per punch. */
 	public static boolean parryEverything = true;
+	/** Mobs flung by a slam shockwave, an explosion or a punch take fall damage when they land.
+	 * Off: ULTRAKILL's own rule, nothing hurts them until they are back on the ground. */
+	public static boolean knockFallDamage = true;
 	/** Mob Damage Filter: defines which Minecraft mobs ULTRAKILL weapons, enemies, Whiplash, and explosions can interact with. Excluded mobs are completely ignored. */
 	public static boolean dmgHostile = true;
 	public static boolean dmgNeutral = true;
@@ -137,6 +140,10 @@ public final class UltracraftConfig {
 	public static boolean dmgOther = true;
 	/** Mob Damage Filter: a mob's own setting (entity id -> allowed), over its group's. */
 	public static final Map<String, Boolean> dmgMobs = new TreeMap<>();
+	/** Enemy Spawn Filter: ULTRAKILL enemies left out of the spawn tables (EnemyType name -> banned). */
+	public static final Map<String, Boolean> spawnBanned = new TreeMap<>();
+	/** Boss Trait Filter: traits a boss is never given at random (trait key -> left out). */
+	public static final Map<String, Boolean> traitOff = new TreeMap<>();
 	/** Minecraft waits for each of ULTRAKILL's frames (while ULTRAKILL keeps up), so the two stay in step. */
 	public static boolean lockStep = true;
 	/** Low-Latency Frames: ULTRAKILL hands each frame over as soon as it's drawn (less delay, a little less throughput). */
@@ -170,7 +177,7 @@ public final class UltracraftConfig {
 	private static final String[] KEYS = {"v1Height", "autoV1", "ukSpawns", "mcMobs", "sharpShop", "bosses", "bossMinutes", "bossDifficulty", "traitChance", "bossWarnSeconds", "bossIntros", "bossDeaths", "bossArenas",
 		"allGear", "playerBlockDamage", "enemyBlockDamage", "blastFireOut", "nukesHitAsMelee", "impactFrames", "launchUltrakill", "opShop", "ukFpsCap", "steveEnemies", "fightMusic", "bossThemes",
 		"calmMusic", "hushMcMusic", "worldMusic", "styleRewards", "styleStreakText", "styleStreakTitle", "arenas", "grindArenas", "grindVoidDeath", "grindSubWaves", "grindShuffle", "lockStep", "lowLatency",
-		"effects", "stainCap", "extraGore", "terrainRange", "ultrakillDir", "setupUltrakill", "teammateMarkers", "absorbCeiling", "airSneakHold", "parryEverything",
+		"effects", "stainCap", "extraGore", "terrainRange", "ultrakillDir", "setupUltrakill", "teammateMarkers", "absorbCeiling", "airSneakHold", "parryEverything", "knockFallDamage",
 		"dmgHostile", "dmgNeutral", "dmgPassive", "dmgOther"};
 
 	private static final String COMMENT = "Ultracraft (most of this is on the Ultracraft settings screen): v1Height = ULTRAKILL render height (0 = full window, lower = faster);"
@@ -183,7 +190,8 @@ public final class UltracraftConfig {
 		+ " styleStreakText = streak count above hotbar, styleStreakTitle = title banner on every 5th kill (both off: hidden);"
 		+ " effects = 2 high, 1 medium, 0 low; stainCap = blood stains kept on blocks (0 none); extraGore = Ultracraft's extra death blood; terrainRange = blocks of terrain sent to ULTRAKILL (64-128);"
 		+ " ultrakillDir = ULTRAKILL's folder, only if Ultracraft can't find it through Steam (it sets up BepInEx and the UltraBridge plugin there); setupUltrakill = you let Ultracraft set ULTRAKILL up (and keep its plugin up to date); teammateMarkers = the other players' names and health over ULTRAKILL's view;"
-		+ " dmgHostile / dmgNeutral / dmgPassive / dmgOther = allow ULTRAKILL to interact with hostile, neutral, passive, or other mobs (excluded mobs are completely immune); dmg.<entity id> = per-mob override";
+		+ " dmgHostile / dmgNeutral / dmgPassive / dmgOther = allow ULTRAKILL to interact with hostile, neutral, passive, or other mobs (excluded mobs are completely immune); dmg.<entity id> = per-mob override;"
+		+ " spawn.<EnemyType> = false leaves that ULTRAKILL enemy out of the spawn tables (Enemy Spawn Filter)";
 
 	private UltracraftConfig() {}
 
@@ -265,6 +273,7 @@ public final class UltracraftConfig {
 			absorbCeiling = bool(p, "absorbCeiling", absorbCeiling);
 			airSneakHold = bool(p, "airSneakHold", airSneakHold);
 			parryEverything = bool(p, "parryEverything", parryEverything);
+			knockFallDamage = bool(p, "knockFallDamage", knockFallDamage);
 			dmgHostile = bool(p, "dmgHostile", dmgHostile);
 			dmgNeutral = bool(p, "dmgNeutral", dmgNeutral);
 			dmgPassive = bool(p, "dmgPassive", dmgPassive);
@@ -281,6 +290,8 @@ public final class UltracraftConfig {
 				if (k.startsWith("bind.")) ukBinds.put(k.substring(5), Integer.parseInt(p.getProperty(k).trim()));
 				if (k.startsWith("cheat.")) cheats.put(k.substring(6), Boolean.parseBoolean(p.getProperty(k).trim()));
 				if (k.startsWith("dmg.")) dmgMobs.put(k.substring(4), Boolean.parseBoolean(p.getProperty(k).trim()));
+				if (k.startsWith("spawn.")) spawnBanned.put(k.substring(6), Boolean.parseBoolean(p.getProperty(k).trim()));
+				if (k.startsWith("traitOff.")) traitOff.put(k.substring(9), Boolean.parseBoolean(p.getProperty(k).trim()));
 				if (k.startsWith("muteSong.")) musicMuted.put(k.substring(9), Boolean.parseBoolean(p.getProperty(k).trim()));
 				if (k.startsWith("look.")) grindLooks.put(k.substring(5), Boolean.parseBoolean(p.getProperty(k).trim()));
 				if (k.startsWith("sky.")) grindSkies.put(k.substring(4), Boolean.parseBoolean(p.getProperty(k).trim()));
@@ -349,6 +360,7 @@ public final class UltracraftConfig {
 		p.setProperty("absorbCeiling", Boolean.toString(absorbCeiling));
 		p.setProperty("airSneakHold", Boolean.toString(airSneakHold));
 		p.setProperty("parryEverything", Boolean.toString(parryEverything));
+		p.setProperty("knockFallDamage", Boolean.toString(knockFallDamage));
 		p.setProperty("dmgHostile", Boolean.toString(dmgHostile));
 		p.setProperty("dmgNeutral", Boolean.toString(dmgNeutral));
 		p.setProperty("dmgPassive", Boolean.toString(dmgPassive));
@@ -361,6 +373,8 @@ public final class UltracraftConfig {
 		p.setProperty("terrainRange", Integer.toString(terrainRange));
 		for (var e : cheats.entrySet()) p.setProperty("cheat." + e.getKey(), Boolean.toString(e.getValue()));
 		for (var e : dmgMobs.entrySet()) p.setProperty("dmg." + e.getKey(), Boolean.toString(e.getValue()));
+		for (var e : spawnBanned.entrySet()) p.setProperty("spawn." + e.getKey(), Boolean.toString(e.getValue()));
+		for (var e : traitOff.entrySet()) p.setProperty("traitOff." + e.getKey(), Boolean.toString(e.getValue()));
 		for (var e : musicMuted.entrySet()) p.setProperty("muteSong." + e.getKey(), Boolean.toString(e.getValue()));
 		for (var e : grindLooks.entrySet()) p.setProperty("look." + e.getKey(), Boolean.toString(e.getValue()));
 		for (var e : grindSkies.entrySet()) p.setProperty("sky." + e.getKey(), Boolean.toString(e.getValue()));

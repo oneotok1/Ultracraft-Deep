@@ -70,6 +70,16 @@ final class UkSpawns {
 		KINDS.put(type, new Kind(flies, xp));
 	}
 
+	/** Every enemy ULTRAKILL can spawn here, in the order the tables were written. */
+	static java.util.List<String> types() {
+		return new java.util.ArrayList<>(KINDS.keySet());
+	}
+
+	/** Enemy Spawn Filter: this one is left out of every table. */
+	static boolean banned(String type) {
+		return Boolean.TRUE.equals(UltracraftConfig.spawnBanned.get(type));
+	}
+
 	/** A spawn table: enemy type, weight. */
 	private static Map<String, Integer> table(Object... pairs) {
 		Map<String, Integer> t = new LinkedHashMap<>();
@@ -213,15 +223,20 @@ final class UkSpawns {
 			}
 		}
 		int total = 0;
-		for (var e : table.entrySet()) if (!MISSING.contains(e.getKey()) && KINDS.containsKey(e.getKey())) total += e.getValue();
+		for (var e : table.entrySet()) if (allowed(e.getKey())) total += e.getValue();
 		if (total <= 0) return null;
 		int r = random.nextInt(total);
 		for (var e : table.entrySet()) {
-			if (MISSING.contains(e.getKey()) || !KINDS.containsKey(e.getKey())) continue;
+			if (!allowed(e.getKey())) continue;
 			r -= e.getValue();
 			if (r < 0) return e.getKey();
 		}
 		return null;
+	}
+
+	/** Whether this table entry may be drawn: ULTRAKILL has it and the enemy spawn filter lets it through. */
+	private static boolean allowed(String type) {
+		return !MISSING.contains(type) && KINDS.containsKey(type) && !banned(type);
 	}
 
 	private static void favour(Map<String, Integer> table, String... types) {

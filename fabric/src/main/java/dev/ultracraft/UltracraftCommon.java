@@ -112,9 +112,18 @@ public final class UltracraftCommon implements ModInitializer {
 			ServerOps.reset();
 		});
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
+			// a mob V1 threw breaks on landing, and a fall is an environment death: nobody is behind the damage source,
+			// so the thrower has to come from the launch that put it in the air. That death is a splat, not a kill:
+			// ULTRAKILL pays its own hundred for one (EnemyIdentifier.Splatter) instead of the fifty a kill is worth
+			ServerPlayer killer = v1Behind(source);
+			boolean splat = false;
+			if (killer == null) {
+				killer = ServerOps.flungBy(entity);
+				splat = killer != null;
+			}
 			// Minecraft's monsters V1 kills pay P on top of the style they earn: more the tougher they are (a zombie or
 			// skeleton 300, an enderman 500, at most 2,000)
-			if (entity instanceof Enemy && !(entity instanceof UkEnemyEntity) && source.getEntity() instanceof ServerPlayer killer && UcNet.isV1(killer)) {
+			if (entity instanceof Enemy && !(entity instanceof UkEnemyEntity) && killer != null) {
 				int p = Math.max(100, Math.min(2000, 100 + Math.round(entity.getMaxHealth() * 10f)));
 				UkProgress.get(killer).award(p);
 			}
@@ -122,9 +131,13 @@ public final class UltracraftCommon implements ModInitializer {
 			// reach without a damage message being sent, so the deaths that never went through the DMG channel were
 			// paying nothing at all
 			if (UcNet.anyV1() && bleeds(entity)) {
-				ServerPlayer killer = v1Behind(source);
 				if (killer != null && entity.level() instanceof ServerLevel sl) {
-					UcNet.send(killer, "KILL " + entity.getId());
+					// a mob the ground slam just hit died of the slam: ULTRAKILL pays its own way for that one (60, or
+					// 160 killed in the air) rather than the fifty every other kill is worth
+					Boolean slam = ServerOps.slamKill(entity);
+					UcNet.send(killer, slam != null
+						? "SLAMKILL " + entity.getId() + " " + (slam ? 1 : 0)
+						: (splat ? "SPLAT " : "KILL ") + entity.getId());
 					float worth = StyleRewards.kill(killer, entity.position().add(0, entity.getBbHeight() * 0.5, 0));
 					if (worth > 1f) net.minecraft.world.entity.ExperienceOrb.award(sl, entity.position(), Math.round(5f * (worth - 1f)) + 2);
 				}

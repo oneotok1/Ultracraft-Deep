@@ -85,10 +85,29 @@ namespace UltraBridge
             source = "swing";
         }
 
+        /// <summary>An explosion's own launch. An enemy's blast throws a mob as ULTRAKILL throws its own enemies; V1's
+        /// own blast (a rocket jump's included) uses the numbers Explosion.Collide gives V1 himself, so a mob standing in
+        /// a rocket jump goes up exactly as far as the jump throws V1 - and a rocket jump's blast deals no damage, so the
+        /// hit would never reach the launch at all if this were left to the damage path.</summary>
         static void Blast(Explosion __instance, Vector3 __1)
         {
-            if (!__instance.enemy || __instance.harmless) return;
-            FromPoint(__1, 200f * __instance.pushForceMultiplier, __instance.maxSize);
+            if (__instance.harmless) return;
+            if (__instance.enemy)
+            {
+                FromPoint(__1, 200f * __instance.pushForceMultiplier, __instance.maxSize);
+                source = "blast";
+                return;
+            }
+            // Explosion.Collide's own number for V1: 200, or for a rocket jump the shrinking 100 / ((jumps + 3) / 3).
+            // The jump count itself is V1's (only his own hit on the blast raises it), so it is read, not stepped here.
+            float force = 200f;
+            if (__instance.rocketExplosion && __instance.damage == 0)
+            {
+                var nm = MonoSingleton<NewMovement>.Instance;
+                int jumps = nm != null ? nm.rocketJumps : 0;
+                force = Mathf.RoundToInt(100f / ((jumps + 3) / 3f));
+            }
+            FromPoint(__1, force * __instance.pushForceMultiplier, __instance.maxSize);
             source = "blast";
         }
 
@@ -137,6 +156,25 @@ namespace UltraBridge
         public static int MobKnockLogCap = 40;
         // V1 falls slower than a mob (World.cs's LiftScale): a mob needs this much more lift to go as high
         const float MobLift = 1f / LiftScale;
+        // Only the horizontal part of a launch is capped: a shockwave's lift is its own number (0.5 * reach * strength),
+        // not a direction component, so clamping the whole vector to 4 would cap the rise at the horizontal cap and no
+        // slam could ever throw a mob higher than a walk. Vertical keeps ULTRAKILL's own value.
+        const float MobKnockSpeed = 4f;
+        // The slam wave's own launch, ULTRAKILL's numbers end to end: PhysicalShockwave hands its enemies the vector
+        // up * force * 2 (PhysicalShockwave.cs:409), DeliverDamage takes a hundredth of it (EnemyIdentifier.cs:1701)
+        // and KnockBack a tenth (Enemy.cs:1540), so a mob leaves the ground at force * 0.002 units a second, plus the
+        // flat 1 unit KnockBack adds on top (Enemy.cs:1528). force already carries the slam's own hold time, because
+        // GroundCheck scales the wave by slamForce * 2.25 (GroundCheck.cs:142).
+        const float SlamKick = 0.002f;
+        const float SlamPop = 1f;
+
+        Vector3 KnockSpeed(Vector3 v)
+        {
+            var m = McDir(v) / 20f;
+            m.y *= MobLift;
+            var flat = Vector3.ClampMagnitude(new Vector3(m.x, 0f, m.z), MobKnockSpeed);
+            return new Vector3(flat.x, m.y, flat.z);
+        }
 
         /// <summary>One of ULTRAKILL's enemies hit this mob with an attack that launches V1: the mob goes flying the
         /// same (MKNOCK id vx vy vz, blocks per tick, the mob's new speed).</summary>
@@ -152,36 +190,35 @@ namespace UltraBridge
             if (v.sqrMagnitude < 1f) return;
             if (mobKnockedAt.Count > 256) mobKnockedAt.Clear();
             mobKnockedAt[p.id] = Time.time;
-            var m = McDir(v) / 20f;
-            m.y *= MobLift;
-            m = Vector3.ClampMagnitude(m, 4f);
+            var m = KnockSpeed(v);
             Net.Send("MKNOCK " + p.id + " " + S(m.x) + " " + S(m.y) + " " + S(m.z));
             if (mobKnockLogs++ < MobKnockLogCap) Plugin.Log.LogInfo("mob knock (" + MobKnock.source + "): " + p.type + " " + m.ToString("F2") + " (V1 mass " + mass + ")");
         }
 
         /// <summary>V1's own landing shockwave reached this mob: it is thrown straight up, as ULTRAKILL throws its own
-        /// enemies, and only a light one (the ones the Whiplash reels in) - a heavy one stands its ground. The lift is
-        /// the shockwave's force, which GroundCheck scales by the slam's slamForce: holding the slam longer throws
-        /// higher. Harmless either way (the slam wave's own damage is zero).</summary>
+        /// enemies, and only a light one (the ones the Whiplash reels in) - a heavy one stands its ground. The height
+        /// is V1's own slamForce, the number GroundCheck multiplies this wave's force by: a tapped slam hops the mob,
+        /// a held one throws it. Harmless either way (the slam wave's own damage is zero).</summary>
         public void SlamShock(McProxy p, float force)
         {
             if (p == null || p.type == "v1" || p.type == "player" || p.type == "end_crystal") return;
             if (!levelPrepared || !originSet || !Net.Connected) return;
             if (HeavyMob(p)) return;
             if (mobKnockedAt.TryGetValue(p.id, out var at) && Time.time - at < 0.2f) return;
-            var nm = MonoSingleton<NewMovement>.Instance;
-            float mass = nm != null && nm.rb != null ? nm.rb.mass : 1f;
-            // ULTRAKILL's shockwave hands its enemies Vector3.up * force * 2 (PhysicalShockwave.CheckCollision), and
-            // NewMovement.Launch turns that into an impulse of 8 on V1's own body - the same launch, straight up
-            var v = Vector3.up * (Mathf.Clamp(force * 2f, 0f, 1000f) * 8f / Mathf.Max(0.01f, mass));
+            // How long the slam was held is already inside force: GroundCheck multiplies this wave by slamForce * 2.25
+            // (GroundCheck.cs:142), and slamForce is 1 when the slam starts (NewMovement.cs:1132) and grows 5 a second
+            // while it is held (NewMovement.cs:707). So the launch is ULTRAKILL's own, unit for unit: the speed its
+            // KnockBack would give one of its enemies, brought over as blocks a tick. Minecraft's gravity then decides
+            // how high that goes, and the mob's own fall decides whether it survives the landing - the wave is
+            // harmless, so this is the whole of its effect.
+            float up = force * SlamKick + SlamPop;
+            float vy = up / 20f / K;
             if (mobKnockedAt.Count > 256) mobKnockedAt.Clear();
             mobKnockedAt[p.id] = Time.time;
-            var m = McDir(v) / 20f;
-            m.y *= MobLift;
-            m = Vector3.ClampMagnitude(m, 4f);
+            var m = new Vector3(0f, vy, 0f);
             if (m.y < 0.05f) return;
             Net.Send("MKNOCK " + p.id + " " + S(m.x) + " " + S(m.y) + " " + S(m.z));
-            if (mobKnockLogs++ < MobKnockLogCap) Plugin.Log.LogInfo("mob knock (slam wave): " + p.type + " " + m.ToString("F2") + " (force " + force.ToString("F1") + ", V1 mass " + mass + ")");
+            if (mobKnockLogs++ < MobKnockLogCap) Plugin.Log.LogInfo("mob knock (slam wave): " + p.type + " " + m.ToString("F2") + " (wave force " + force.ToString("F1") + ", launch " + up.ToString("F0") + " u/s = " + (up / 20f / K).ToString("F2") + " blocks a tick)");
         }
     }
 }

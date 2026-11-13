@@ -231,7 +231,7 @@ namespace UltraBridge
                     var a = rest.Split(' ');
                     if (a.Length < 5) break;
                     int id = int.Parse(a[0]);
-                    if (!levelPrepared || !originSet)
+                    if (!levelPrepared || !originSet || handoffPending)
                     {
                         Net.Send("BOSSGONE " + id + " notready");
                         break;

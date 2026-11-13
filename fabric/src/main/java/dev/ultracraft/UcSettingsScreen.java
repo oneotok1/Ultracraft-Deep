@@ -217,6 +217,14 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 			.width(150)
 			.tooltip(Tooltip.create(Component.translatable("Configure which Minecraft mobs can be targeted, damaged, or grabbed by ULTRAKILL, by category or per mob.")))
 			.build());
+		c.add(Button.builder(Component.translatable("Enemy Spawn Filter..."), b -> Minecraft.getInstance().setScreen(new EnemySpawnScreen(c.self())))
+			.width(150)
+			.tooltip(Tooltip.create(Component.translatable("Choose which of ULTRAKILL's enemies may turn up in the dark. Bosses and the Cyber Grind are not affected.")))
+			.build());
+		c.add(Button.builder(Component.translatable("Boss Trait Filter..."), b -> Minecraft.getInstance().setScreen(new UcTraitFilterScreen(c.self())))
+			.width(150)
+			.tooltip(Tooltip.create(Component.translatable("Choose which traits a boss is never given at random. A boss set to Picked in Boss Setup still gets exactly what is switched on there.")))
+			.build());
 	}
 
 	private static void gameplay(Category c) {
@@ -227,6 +235,8 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 			bool("V1's Red Explosions Hit as Melee", "V1's red explosions count as feedbacker (Previous version behavior)", UltracraftConfig.nukesHitAsMelee, v -> UltracraftConfig.nukesHitAsMelee = v),
 			bool("Blasts Put Fire Out", "V1's explosions extinguish flames: fires within blast radius are put out, and craters are no longer ignited (e.g. mini nuke fire). Works even with block damage disabled.",
 				UltracraftConfig.blastFireOut, v -> UltracraftConfig.blastFireOut = v),
+			bool("Knockback Fall Damage", "Minecraft mobs flung by V1's slam shockwave, explosions or punches take fall damage when they hit the ground. Off: ULTRAKILL's own rule, nothing hurts them until they land.",
+				UltracraftConfig.knockFallDamage, v -> UltracraftConfig.knockFallDamage = v),
 			bool("Extra Blood Counts as Health Cap", "Absorption hearts (golden apples and potions) expand V1's maximum health: the health bar and readout extend to include them, and fresh blood refills them back to the boosted cap. Off: absorption acts as a temporary shield that absorbs damage first but cannot be refilled by blood.",
 				UltracraftConfig.absorbCeiling, v -> UltracraftConfig.absorbCeiling = v),
 			slider("Impact Frames", "How long ULTRAKILL's impact frames (the freeze on big hits) last: 0.1x to 3x.", 1, 30, Math.round(UltracraftConfig.impactFrames * 10f),

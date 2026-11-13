@@ -23,6 +23,7 @@
     "BlockItemMixin",
     "EntityTouchMixin",
     "LargeFireballAccessor",
+    "LivingEntityAccessor",
     "LivingEntityMixin",
     "MobAccessor",
     "MobAiMixin",

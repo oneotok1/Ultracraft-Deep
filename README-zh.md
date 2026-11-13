@@ -29,8 +29,8 @@ Minecraft 启动时崩溃并提示 “Unsupported class file major version 65”
 ## 设置
 
 点击 **Ultracraft...**（位于标题界面、暂停菜单、选项界面，或输入指令 `/uc settings`），各专项设置页面如下：
-- **Enemies & Bosses**：Minecraft 生物、ULTRAKILL 敌人、Boss（生成间隔、难度倍率、词条概率）、竞技场、史蒂夫状态下的敌人遭遇，以及用于定制交互名单的 **Mob Damage Filter**（生物伤害过滤）。
-- **Gameplay**：自动成为 V1、方块破坏规则、爆炸灭火、吸收护盾算作血上限、打击定格时长、随 Minecraft 同步自启 ULTRAKILL。
+- **Enemies & Bosses**：Minecraft 生物、ULTRAKILL 敌人、Boss（生成间隔、难度倍率、词条概率）、竞技场、史蒂夫状态下的敌人遭遇，用于定制交互名单的 **Mob Damage Filter**（生物伤害过滤），用于挑选暗处会出现哪些 ULTRAKILL 敌人的 **Enemy Spawn Filter**（敌人刷新过滤），以及用于把某些词条从BOSS随机池里排除的 **Boss Trait Filter**（BOSS词条过滤器）。
+- **Gameplay**：自动成为 V1、方块破坏规则、爆炸灭火、被击飞生物的摔落伤害、吸收护盾算作血上限、打击定格时长、随 Minecraft 同步自启 ULTRAKILL。
 - **Shop & Rewards**：风格奖励结算、连击提示文字、OP 商店超额数值、高分辨率商店界面。
 - **Performance**：ULTRAKILL 画面渲染分辨率与帧率上限、锁步同步、低延迟帧。
 - **Music**：ULTRAKILL 战斗音乐、Boss 主题曲、非战斗平静曲目、各项音量调节。
@@ -48,7 +48,9 @@ ULTRAKILL 的敌人会在暗处自然生成，生成的种类与所处生态群�
 - 下界：按群系分布恶魔（灵魂沙峡谷为灵魂系，绯红森林为血肉系，玄武岩三角洲为重工业机群）；
 - 末地：天使神族（Virtues 美德、Powers 能天使、Providence 神谕）。
 
-ULTRAKILL 敌人也会主动与 Minecraft 敌对生物交战。能击飞 V1 的重拳、践踏、光柱或爆炸，同样能将原版生物炸飞同等距离，且被击飞的生物不承受摔落伤害。
+**Enemy Spawn Filter**（敌人刷新过滤，位于 Enemies & Bosses 页）决定上述哪些种类可以出现；BOSS与血宫的波次不受它影响。
+
+ULTRAKILL 敌人也会主动与 Minecraft 敌对生物交战。能击飞 V1 的重拳、践踏、光柱或爆炸，同样能将原版生物炸飞同等距离，V1 自己的爆炸也照样把它们抛出去。这样被击飞的生物落地时会承受摔落伤害，抛得够高就会摔死——**Knockback Fall Damage**（击退摔落伤害，Gameplay 设置，默认开启）可以关掉它，回到 ULTRAKILL 自己的规则：落地之前不受任何伤害。
 
 **V1 生命值与 Minecraft 严格等比换算。** V1 的基础 100 生命（低难度血条 200）直接映射原版 Minecraft 生命上限：20 满血对应 100 V1 生命。生命提升效果或任何增加红心的模组都会等比提升 V1 的血池（上限为 V1 自身满血的 4 倍：普通难度 400，低难度 800）。金苹果或药水提供的伤害吸收心（黄心）以深色段渲染在 ULTRAKILL 血条顶端，原版生物攻击与 ULTRAKILL 命中均优先消耗吸收池。开启 **Extra Blood Counts as Health Cap**（Gameplay 设置，默认开启）时，攻击吸血可直接回填黄心至上限；关闭时黄心仅作为不可回复的一次性防伤护盾。
 
@@ -155,7 +157,7 @@ Boss 协同战：Boss 将主动围猎周遭所有 V1，优先锁定并猛攻输�
 
 终端内置 **Upgrades**（能力升级）页面，提供多种强化分支，消耗 P 点并通过 `^ v - +` 灵活升降级。已购升级持久生效，降级保留解锁历史但不退还差额 P 点。
 
-**电子血宫（The Cyber Grind）**：在商店界面的 Cyber Grind 选项卡开启。开启 **Cyber Grind Arenas**（Enemies & Bosses）后，商店周遭的 V1 将一同传送到原汁原味的电子血宫竞技场：悬浮于虚空之上的 16x16 升降矩阵。每清理一波敌人，立柱矩阵将变换为全新 **构型（pattern）**（完全兼容 ULTRAKILL 官方 `.cgp` 格式：近战刷怪格生成近战兵种，远程格生成远程敌人，真弹跳板飞升，阶梯环环相扣）。构型兼容 ULTRAKILL `Cybergrind/Patterns` 目录内的官方与自制 `.cgp` 文件，并附带 Ultracraft 专属定制构型。每 5 波地貌环境变换为地狱某一层的风貌方块与苍穹天际；每 15 波迎来首领 Boss 战。竞技场不可破坏。南侧立柱光芒之下设立临时商店补给点：在终端点击 **Leave** 即可全员安全传送返航。输入指令 `/uc grind start` 可开启单人挑战，`/uc grind arena <序号>` 可直接指定层级风貌入场，`/uc grind stop` 强制中止挑战。关闭该设置时，血宫波次将在触发的原版商店周围就地刷出。
+**电子血宫（The Cyber Grind）**：在商店界面的 Cyber Grind 选项卡开启。开启 **Cyber Grind Arenas**（Enemies & Bosses）后，商店周遭的 V1 将一同传送到原汁原味的电子血宫竞技场：悬浮于虚空之上的 16x16 升降矩阵。每清理一波敌人，立柱矩阵将变换为全新 **构型（pattern）**（完全兼容 ULTRAKILL 官方 `.cgp` 格式：近战刷怪格生成近战兵种，远程格生成远程敌人，真弹跳板飞升，阶梯环环相扣）。构型兼容 ULTRAKILL `Cybergrind/Patterns` 目录内的官方与自制 `.cgp` 文件，并附带 Ultracraft 专属定制构型。每 5 波地貌环境变换为地狱某一层的风貌方块与苍穹天际；每 15 波迎来 BOSS 战。竞技场不可破坏。南侧立柱光芒之下设立临时商店补给点：在终端点击 **Leave** 即可全员安全传送返航。输入指令 `/uc grind start` 可开启单人挑战，`/uc grind arena <序号>` 可直接指定层级风貌入场，`/uc grind stop` 强制中止挑战。关闭该设置时，血宫波次将在触发的原版商店周围就地刷出。
 
 **血宫联机协作**：任何玩家可中途加入进行中的血宫：在任意商店终端点击 **Join**，或输入 `/uc grind join` 参战。怪潮规模随参战 V1 人数动态上调。战斗倒地可被队友救援扶起（波次结算时亦全员复活）；全员倒地即宣告挑战终结，全员平安送回起点。个人在终端点击 Leave（或输入 `/uc grind leave`）仅自己离场，房主离场时指挥权顺延至下一位玩家。
 

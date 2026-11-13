@@ -12,6 +12,7 @@
 // keeps the pool. Either way the yellow hearts are Steve's.
 
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
@@ -43,6 +44,25 @@ namespace UltraBridge
 
         /// <summary>Set when the maximum moved, so SendPose sends the HP line even if the health itself did not.</summary>
         internal static bool MaxChanged;
+
+        /// <summary>Totems of Undying V1 carries, as Minecraft last counted them. One spends itself on the blow that
+        /// would have been his last; Minecraft's own death protection never runs while his health lives here.</summary>
+        internal static int Totems;
+
+        /// <summary>Set for the void's killing blow, which a totem cannot ward off any more than it can in Minecraft.</summary>
+        static bool NoTotem;
+
+        /// <summary>Minecraft has this V1 in creative (or watching as a spectator): nothing ULTRAKILL does reaches him.
+        /// Sent as GOD 1/0 when the game mode changes, and never saved anywhere: it is Minecraft's state, not a cheat.</summary>
+        internal static bool God;
+
+        /// <summary>Steve's armour, as Minecraft last reported it (ARMOR line): the points, the toughness that keeps
+        /// them from folding under a heavy blow, Protection's points, and Resistance's level. ULTRAKILL's own enemies
+        /// never pass through Minecraft's pipeline, so the same arithmetic is done here from these four.</summary>
+        internal static int ArmourPoints;
+        internal static float ArmourToughness;
+        internal static float ArmourProtection;
+        internal static int ArmourResistance;
 
         /// <summary>Steve's maximum as Minecraft just reported it, held until there is a V1 to resize.</summary>
         static int mcPending = -1;
@@ -131,6 +151,31 @@ namespace UltraBridge
                     if (absorb == pushedMc && Time.unscaledTime - pushedAt < 0.5f) break;
                     AbsorbMc = absorb;
                     break;
+                case "TOTEM":
+                    // TOTEM <n>: how many Totems of Undying V1 carries, counted by Minecraft and sent when it moves
+                    if (int.TryParse(rest.Trim(), out int totems)) Totems = Mathf.Max(0, totems);
+                    break;
+                case "GOD":
+                    // GOD 1/0: Minecraft put this V1 in creative (or a spectator); ULTRAKILL's own damage stops here too
+                    God = rest.Trim() == "1";
+                    break;
+                case "ARMOR":
+                    // ARMOR <points> <toughness> <protection> <resistance>: Steve's armour as Minecraft counts it, sent
+                    // when any of the four moves. ULTRAKILL's enemies never reach Minecraft, so its arithmetic is redone
+                    // here (see Ward).
+                    {
+                        var p = rest.Trim().Split(' ');
+                        if (p.Length < 4) break;
+                        if (!int.TryParse(p[0], out int points)) break;
+                        if (!float.TryParse(p[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float tough)) break;
+                        if (!float.TryParse(p[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float prot)) break;
+                        if (!int.TryParse(p[3], out int res)) break;
+                        ArmourPoints = Mathf.Max(0, points);
+                        ArmourToughness = tough;
+                        ArmourProtection = prot;
+                        ArmourResistance = Mathf.Max(0, res);
+                    }
+                    break;
             }
         }
 
@@ -197,13 +242,69 @@ namespace UltraBridge
         /// </summary>
         internal static void Soak(NewMovement nm, ref int damage)
         {
-            if (FromMc || damage <= 0 || AbsorbMc <= 0 || nm.hp <= 0 || UkMax <= 0 || McMax <= 0) return;
+            if (damage <= 0 || nm.hp <= 0) return;
+            // a hit Minecraft has already reduced must not be reduced here a second time
+            if (FromMc) return;
+            // what Steve's armour and his Minecraft effects would have taken off it, done here because ULTRAKILL's
+            // own enemies never reach that code at all
+            Ward(ref damage);
+            if (damage <= 0) return;
+            // A Totem of Undying: the blow that would have been the last one is warded off instead. Minecraft's own
+            // death protection runs entirely on the other side, where the item lives - the count only arrives here
+            // (TOTEM n) so this track can tell the blow is survivable; the item itself is spent back there (TOTEMUSE)
+            // through that same protection, sound, effects and all. It comes after the armour for the same reason
+            // Minecraft checks it last: only what is left over is the blow.
+            if (Totems > 0 && !NoTotem && damage >= nm.hp)
+            {
+                Totems--;
+                damage = 0;
+                Net.Send("TOTEMUSE");
+                return;
+            }
+            if (AbsorbMc <= 0 || UkMax <= 0 || McMax <= 0) return;
             int back = Mathf.Min(damage, Mathf.Max(0, Mathf.CeilToInt(AbsorbHp)));
             if (back <= 0) return;
             // the pool pays in Steve's health points (Minecraft's own units, which is what the server keeps); the
             // rounding is there because both of them count in whole points and a hit is rarely a whole one of ours
             Spend(Mathf.RoundToInt((AbsorbHp - back) * McMax / UkMax));
             damage -= back;
+        }
+
+        /// <summary>
+        /// The armour a hit wears off, worked out the way Minecraft works it out, because ULTRAKILL's enemies never
+        /// reach that code: a Stray's beam is handed to GetHurt directly, so without this it lands on V1 with the
+        /// damage it would do to someone wearing nothing at all.
+        ///
+        /// <para>Minecraft's own figures, in order, from CombatRules and LivingEntity. Armour first: the points are
+        /// scaled down by the blow itself (a heavy hit drives them to their floor of a fifth, a light one leaves them
+        /// whole), so one armour number is never a single percentage, and the sum is then divided by 25. Protection and
+        /// its kin come next, as points on the same scale. Resistance last, five points a level. Nothing here runs for
+        /// a hit Minecraft already reduced (FromMc), and nothing is ever reduced to nothing: a hit that does land does
+        /// at least one point, as it does in Minecraft.</para>
+        /// </summary>
+        internal static void Ward(ref int damage)
+        {
+            if (damage <= 0) return;
+            if (ArmourPoints > 0)
+            {
+                // CombatRules.getDamageAfterAbsorb: i = 2 + toughness/4, j = clamp(armour - damage/i, armour*0.2, 20)
+                float keep = 2f + ArmourToughness / 4f;
+                float points = Mathf.Clamp(ArmourPoints - damage / keep, ArmourPoints * 0.2f, 20f);
+                float cut = points / 25f;
+                damage = Mathf.Max(1, Mathf.RoundToInt(damage * (1f - cut)));
+            }
+            if (ArmourProtection > 0f)
+            {
+                // CombatRules.getDamageAfterMagicAbsorb: points clamp at 20, then a flat twenty-fifth each
+                float points = Mathf.Clamp(ArmourProtection, 0f, 20f);
+                damage = Mathf.Max(1, Mathf.RoundToInt(damage * (1f - points / 25f)));
+            }
+            if (ArmourResistance > 0)
+            {
+                // LivingEntity.getDamageAfterMagicAbsorb: five points a level, out of the same twenty-five
+                int points = Mathf.Min(20, ArmourResistance * 5);
+                damage = Mathf.Max(1, Mathf.RoundToInt(damage * (25f - points) / 25f));
+            }
         }
 
         /// <summary>
@@ -239,8 +340,9 @@ namespace UltraBridge
         {
             FromMc = true;
             NoShake = true;
+            NoTotem = true; // the void takes V1 outright: a totem cannot ward off the bottom of the world
             try { nm.GetHurt(nm.hp * 10 + 999, false, 0f, ignoreInvincibility: true); }
-            finally { FromMc = false; NoShake = false; }
+            finally { FromMc = false; NoShake = false; NoTotem = false; }
         }
     }
 
@@ -286,6 +388,8 @@ namespace UltraBridge
             {
                 // GetHurt's own early outs, so that a hit nothing was going to come of costs the pool nothing either
                 if (__instance.dead || __instance.levelOver || damage <= 0) return;
+                // creative (or watching): ULTRAKILL's enemies can still swing at him, but nothing of theirs lands
+                if (Bridge.God) { damage = 0; return; }
                 if (invincible && __instance.gameObject.layer == 15 && !ignoreInvincibility) return;
                 if (Invincible != null) // Assist Mode's invincibility: it zeroes the damage right after this
                 {

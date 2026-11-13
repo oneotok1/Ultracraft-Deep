@@ -69,7 +69,9 @@ namespace UltraBridge
                     // kind 1 came with the dark (and despawns far away), 2 is a Cyber Grind wave's
                     var a = rest.Split(' ');
                     int kind = a.Length > 4 ? int.Parse(a[4]) : 0;
-                    if (a.Length >= 4 && levelPrepared && originSet) SpawnAt(a[0], new Vector3(F(a[1]), F(a[2]), F(a[3])), kind);
+                    // not while the handover holds the world: Minecraft answers LANDED only once V1 is stood there,
+                    // and an enemy that turns up before that lands in the frame the player is being handed into
+                    if (a.Length >= 4 && levelPrepared && originSet && !handoffPending) SpawnAt(a[0], new Vector3(F(a[1]), F(a[2]), F(a[3])), kind);
                     else if (kind == 2) Net.Send("GRINDGONE 1");
                     break;
                 }
@@ -437,6 +439,11 @@ namespace UltraBridge
 
         void ResetWorldExtras()
         {
+            // a handover in flight belonged to the scene that is going and its teleport will never be answered: say so
+            // now, or Minecraft sits frozen until its own timeout notices nobody is coming
+            tpHoldUntil = 0f;
+            settleRun = 0;
+            EndHandoff();
             ClearPuppets();
             driving = false;
             wasDriving = false;
@@ -601,38 +608,66 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
 
         float nextExtras;
 
-        // after a teleport V1 waits where it was put until there is ground under it: Minecraft's blocks around a new
-        // spot (or around a new origin) arrive over a few frames, and V1 must not drop through terrain that isn't built
-        // yet and fall forever. The hold ends as soon as the terrain under it has been built, or after a short grace
-        // period. It used to end only when a downward ray found ground, which kept V1 frozen in mid-air for as long as
-        // the sections took to arrive - that wait is what made the handover to V1 feel stuck for a second or two.
+        // after a teleport V1 waits where it was put until the handover is really over: Minecraft's blocks around a
+        // new spot (or around a new origin) arrive over a few frames, and V1 must not drop through terrain that isn't
+        // built yet and fall forever. The hold ends once V1 is landed AND there is ground under it - that is the
+        // moment Minecraft is told its world may run again. It used to end on a jump-size test that a same-spot
+        // handover never passed, so the answer went out on the teleport's own frame and nothing was held at all.
+        const float HandoffMax = 5f;
+        // the takeover swaps the camera, the HUD and the weapon arm over a few frames: answering before they are
+        // done would unfreeze Minecraft into the middle of the very stall the freeze exists to hide
+        const float HandoffMin = 0.4f;
+        // and the level's first seconds carry one-off loads of its own (the shop prefab, a font pack) that stall
+        // ULTRAKILL's main thread for a second or more: a handover answered into that stall is exactly the
+        // "frozen for a second right after switching" the player reported, so the answer waits for a run of
+        // healthy frames instead of a clock
+        const float SettleFrame = 0.1f;
+        const int SettleFrames = 3;
         float tpHoldUntil;
+        float tpHoldFrom;
+        float tpHoldFrameAt;
+        int settleRun;
         Vector3 tpHoldAt;
-        int tpHoldSections;
-        Vector3 lastTpAt;
+        bool handoffPending;
 
         void HoldAfterTeleport(Vector3 at)
         {
-            // Minecraft sends its position every tick, not only when a teleport happens: re-arming the hold on each
-            // of those left V1 pinned where it stood, because every message pushed the deadline out again. Only a
-            // jump too far to be walked is a teleport worth waiting for.
-            bool jumped = (at - lastTpAt).sqrMagnitude > 64f;
-            lastTpAt = at;
-            if (!jumped) return;
+            // the same handover is announced more than once (READY sends the position again): re-arming on each of
+            // those pushed the deadline out forever, so only a spot away from the one already waited on is new
+            if (handoffPending && (at - tpHoldAt).sqrMagnitude < 4f) return;
             tpHoldAt = at;
-            tpHoldUntil = Time.unscaledTime + 0.6f;
-            tpHoldSections = sections.Count;
+            tpHoldFrom = Time.unscaledTime;
+            tpHoldFrameAt = Time.unscaledTime;
+            settleRun = 0;
+            tpHoldUntil = Time.unscaledTime + HandoffMax;
+            // the hold is what Minecraft waits on: it is told when the handover is done (see KeepTeleportHold)
+            handoffPending = true;
         }
 
         void KeepTeleportHold(NewMovement nm)
         {
             if (tpHoldUntil <= 0f) return;
-            // the sections that cover the landing spot decide it, not the whole set: a world-wide rebase streams
-            // terrain in for a while and V1 has no business waiting for the far side of it
-            bool built = sections.Count != tpHoldSections && GroundBuilt(tpHoldAt);
-            if (built || driving || nm.dead || Time.unscaledTime > tpHoldUntil)
+            // both halves matter: ground under V1 while the takeover is still running means camera and HUD are still
+            // coming, and a landed V1 with no ground under it drops through the world the moment it is let go. The
+            // deadline is the backstop for a handover that never finishes, and it sits under Minecraft's own 5000 ms
+            // one so the answer comes from here instead of from that timeout
+            bool grounded = nm.gc != null && nm.gc.onGround;
+            // the shop's prefab is a one-off load that used to land just after the answer, stalling the frame the
+            // player was handed into: it is fetched here instead, while Minecraft is still waiting
+            if (shopPrefab == null && !shopFailed && Time.timeSinceLevelLoad > 3f) PrepareShop();
+            bool shopDone = shopPrefab != null || shopFailed;
+            // healthy frames in a row: a stalled frame breaks the run, so the answer cannot go out in the middle of one
+            float dt = Time.unscaledTime - tpHoldFrameAt;
+            tpHoldFrameAt = Time.unscaledTime;
+            if (dt > 0f && dt < SettleFrame) settleRun++;
+            else settleRun = 0;
+            bool settled = settleRun >= SettleFrames;
+            bool ready = v1Landed && grounded && GroundBuilt(tpHoldAt) && shopDone && settled;
+            bool held = Time.unscaledTime - tpHoldFrom >= HandoffMin;
+            if ((ready && held) || driving || nm.dead || Time.unscaledTime > tpHoldUntil)
             {
                 tpHoldUntil = 0f;
+                EndHandoff();
                 return;
             }
             nm.transform.position = tpHoldAt;
@@ -641,20 +676,25 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
             fallPeak = tpHoldAt.y;
         }
 
-        /// <summary>Whether a built section stands under this point, rather than the ray happening to find nothing
-        /// because the ground it should hit is still queued.</summary>
+        /// <summary>V1 is where Minecraft put it and the ground under it is there: the world it was holding may run
+        /// again. Nothing is sent when no handover is outstanding, so the per-tick TP messages cost nothing.</summary>
+        void EndHandoff()
+        {
+            if (!handoffPending) return;
+            handoffPending = false;
+            Net.Send("LANDED");
+        }
+
+        /// <summary>Whether something solid stands under V1's feet, rather than the ground it needs still being
+        /// queued. Cast down instead of reading the section's bounding box: a chunk that carries a hill or a tree
+        /// reaches far above the feet of someone standing on its flat part, so the box top says nothing about the
+        /// ground here and that test was false even with the terrain fully built.</summary>
         bool GroundBuilt(Vector3 at)
         {
-            foreach (var kv in sections)
-            {
-                var go = kv.Value;
-                if (go == null) continue;
-                var mc = go.GetComponent<MeshCollider>();
-                if (mc == null || mc.sharedMesh == null) continue;
-                if (!mc.bounds.Contains(at)) continue;
-                if (mc.bounds.min.y <= at.y + 0.5f) return true;
-            }
-            return false;
+            Vector3 feet = at - Vector3.up * 1.5f;
+            // from a little above the feet, so ground exactly at them still counts, far enough down to reach the
+            // step below them; the terrain is built on the Environment layer
+            return Physics.Raycast(feet + Vector3.up * 0.5f, Vector3.down, out _, 4f, 1 << 8, QueryTriggerInteraction.Ignore);
         }
 
         void UpdateWorldExtras(NewMovement nm)

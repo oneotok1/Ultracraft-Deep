@@ -2,6 +2,7 @@
 // count toward a streak there, and pay out in experience and loot.
 
 using System;
+using UnityEngine;
 
 namespace UltraBridge
 {
@@ -38,6 +39,29 @@ namespace UltraBridge
                 if (calc != null) calc.AddToMultiKill(null);
             }
             catch (Exception) { }
+        }
+
+        /// <summary>
+        /// ULTRAKILL's air bonus: the lines StyleCalculator pays itself are scaled by a multiplier that climbs from
+        /// one to three while V1 is off the ground or sliding, and falls back once landed (StyleCalculator.Update).
+        /// That is its private AddPoints(points, pointName, eid, sourceWeapon): it books points + num, with num
+        /// rounded from (points * airTime - points), and this repeats that arithmetic rather than the tidier
+        /// rounding of points * airTime so the two never disagree by a point. Lines that go straight to StyleHUD
+        /// (AIR SLAM, AIRSHOT, FIREWORKS, SPLATTERED) never see the multiplier, so they must not come through here.
+        /// </summary>
+        static int AirScaled(int points)
+        {
+            try
+            {
+                var calc = MonoSingleton<StyleCalculator>.Instance;
+                if (calc != null)
+                {
+                    float airTime = calc.airTime;
+                    return points + Mathf.RoundToInt(points * airTime - points);
+                }
+            }
+            catch (Exception) { }
+            return points;
         }
     }
 }

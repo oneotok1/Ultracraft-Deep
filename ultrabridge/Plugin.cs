@@ -77,6 +77,10 @@ namespace UltraBridge
         public float drawnAt;
         // a hostile Minecraft mob (zombie, skeleton, creeper...): ULTRAKILL's enemies go for it
         public bool hostile;
+        // it flies (a ghast, a phantom, a bat): ULTRAKILL doesn't pay FIREWORKS for those, however high they are
+        public bool flying;
+        // when a blast last caught it off the ground: the kill that follows is a FIREWORKS, not a plain kill
+        public float airBlastAt = -10f;
         // mid-body point enemies aim at (EnemyTarget.position uses the override centre)
         public Transform center;
         // a Minecraft melee hit waits this long for a parry before it lands
@@ -180,7 +184,29 @@ namespace UltraBridge
 
     internal static class Net
     {
+        /// <summary>Everything that can wait its turn.</summary>
         public static readonly ConcurrentQueue<string> Inbox = new ConcurrentQueue<string>();
+        /// <summary>Commands that must never be a frame late: they move the player, set the level up, say whether the
+        /// two games are still talking, or carry the input V1 is being played with. Kept apart from the rest so a
+        /// burst of ordinary lines (an explosion killing a crowd sends hundreds of DIEDs at once) cannot stand in
+        /// front of them: the frame's budget stops the ordinary queue, and these still go through.</summary>
+        public static readonly ConcurrentQueue<string> UrgentInbox = new ConcurrentQueue<string>();
+        static readonly HashSet<string> UrgentCommands = new HashSet<string> { "IN", "TP", "ORIGIN", "RESPAWN", "FULLHEAL", "READY", "DEAD", "CONNECTED", "DISCONNECTED", "PAUSE", "LOAD", "SECCLR" };
+
+        /// <summary>Whether this line is one the frame must not sit on. Read here, on the receiving thread, so the
+        /// frame never has to look at a line twice.</summary>
+        static bool Urgent(string line)
+        {
+            int sp = line.IndexOf(' ');
+            return UrgentCommands.Contains(sp < 0 ? line : line.Substring(0, sp));
+        }
+
+        static void Enqueue(string line)
+        {
+            if (Urgent(line)) UrgentInbox.Enqueue(line);
+            else Inbox.Enqueue(line);
+        }
+
         static TcpListener listener;
         static StreamWriter writer;
         static readonly object wlock = new object();
@@ -203,7 +229,7 @@ namespace UltraBridge
                         var s = c.GetStream();
                         lock (wlock) writer = new StreamWriter(s, new UTF8Encoding(false)) { AutoFlush = false, NewLine = "\n" };
                         Connected = true;
-                        Inbox.Enqueue("CONNECTED");
+                        Enqueue("CONNECTED");
                         var r = new StreamReader(s, Encoding.UTF8);
                         string line;
                         while ((line = r.ReadLine()) != null)
@@ -216,12 +242,12 @@ namespace UltraBridge
                                 continue;
                             }
                             if (line.StartsWith("IN ")) System.Threading.Interlocked.Increment(ref InputCount);
-                            Inbox.Enqueue(line);
+                            Enqueue(line);
                         }
                     }
                     catch (Exception e) { Plugin.Log.LogWarning("net: " + e.Message); }
                     Connected = false;
-                    Inbox.Enqueue("DISCONNECTED");
+                    Enqueue("DISCONNECTED");
                 }
             }) { IsBackground = true, Name = "UltraBridge net" }.Start();
         }
@@ -335,6 +361,10 @@ namespace UltraBridge
         float nextLoadingNote;
         float forceClickUntil;
         bool inputHeld;
+        /// <summary>When the last IN line arrived. Devices keep whatever state they were last given, so input
+        /// that stops arriving (Minecraft gone to a menu, out of the world, busy) has to be treated as released -
+        /// otherwise the last held trigger fires on its own until the game restarts.</summary>
+        float lastInAt = -1f;
         /// <summary>-ucnosleep: the Sandbox only hidden, as before (for comparing, or if sleeping it ever breaks something).</summary>
         internal static readonly bool NoSandboxSleep = Array.IndexOf(Environment.GetCommandLineArgs(), "-ucnosleep") >= 0;
         internal static readonly bool LaunchedForMinecraft = Array.IndexOf(Environment.GetCommandLineArgs(), "-ultracraft") >= 0;
@@ -405,6 +435,29 @@ namespace UltraBridge
         float perfLogAt;
         float perfCmdUntil;
         int frameCount;
+        /// <summary>Milliseconds of one frame's inbox a frame may spend: an explosion that kills a crowd of Minecraft
+        /// mobs sends hundreds of death lines at once, and handling them all in one frame stalls ULTRAKILL while
+        /// Minecraft carries on (the view freezes, then everything arrives at once).</summary>
+        const float CmdBudgetMs = 2f;
+        /// <summary>Deaths given their full gore per frame; the rest wait their turn (see deathBacklog).</summary>
+        const int MaxGorePerFrame = 4;
+        /// <summary>Deaths that arrived over the cap, drawn on later frames instead of all at once. Bounded: a wipe of
+        /// thousands leaves the oldest bursts out rather than growing without end.</summary>
+        readonly Queue<string> deathBacklog = new Queue<string>();
+        int goreThisFrame;
+        /// <summary>Handles one line from either queue, with the same guard on both: a line that throws must not take
+        /// the frame down with it.</summary>
+        void Run(string line)
+        {
+            var hw = System.Diagnostics.Stopwatch.StartNew();
+            try { Handle(line); }
+            catch (Exception e) { Plugin.Log.LogWarning("handle '" + Trunc(line) + "': " + e); }
+            if (perfCmdUntil > 0f && Time.unscaledTime < perfCmdUntil)
+            {
+                long ms = hw.ElapsedMilliseconds;
+                if (ms >= 2) Plugin.Log.LogInfo("cmd " + (line.Length > 24 ? line.Substring(0, line.IndexOf(' ') + 1) : line) + " took " + ms + " ms (" + line.Length + " chars)");
+            }
+        }
 
         void Update()
         {
@@ -427,16 +480,27 @@ namespace UltraBridge
                     else System.Threading.Thread.Yield();
                 }
             }
-            while (Net.Inbox.TryDequeue(out var line))
+            goreThisFrame = 0;
+            // deaths held over from the last frame come first, so a crowd killed together still bleeds, a few a frame
+            for (int i = 0; i < MaxGorePerFrame && deathBacklog.Count > 0; i++)
             {
-                var hw = System.Diagnostics.Stopwatch.StartNew();
-                try { Handle(line); }
-                catch (Exception e) { Plugin.Log.LogWarning("handle '" + Trunc(line) + "': " + e); }
-                if (perfCmdUntil > 0f && Time.unscaledTime < perfCmdUntil)
-                {
-                    long ms = hw.ElapsedMilliseconds;
-                    if (ms >= 2) Plugin.Log.LogInfo("cmd " + (line.Length > 24 ? line.Substring(0, line.IndexOf(' ') + 1) : line) + " took " + ms + " ms (" + line.Length + " chars)");
-                }
+                var held = deathBacklog.Dequeue();
+                try { Handle(held); }
+                catch (Exception e) { Plugin.Log.LogWarning("handle '" + Trunc(held) + "': " + e); }
+            }
+            // the commands the frame cannot sit on go first and all of them: input, teleports, the level's setup,
+            // whether the two games are still talking. They were sorted out on the receiving thread, so nothing
+            // ordinary can ever stand in front of them
+            while (Net.UrgentInbox.TryDequeue(out var urgent))
+                Run(urgent);
+            // then everything else, for as long as the frame can spare. Nothing is dropped: what is left stays in
+            // the queue, in the order it arrived, for the next frame
+            float budget = Time.realtimeSinceStartup + CmdBudgetMs / 1000f;
+            while (Net.Inbox.TryPeek(out _))
+            {
+                if (Time.realtimeSinceStartup > budget) break;
+                Net.Inbox.TryDequeue(out var line);
+                Run(line);
             }
 
             HoldPause();
@@ -445,6 +509,9 @@ namespace UltraBridge
             {
                 lastScene = scene;
                 levelPrepared = false;
+                loadBeganAt = Time.realtimeSinceStartup;
+                // deaths held over belong to the scene that is going
+                deathBacklog.Clear();
                 v1Landed = false;
                 armSig = null;
                 tpReceived = false;
@@ -509,6 +576,7 @@ namespace UltraBridge
                 prepWaiting = true;
                 prepWaitAt = Time.unscaledTime;
                 prepWaitSince = Time.timeSinceLevelLoad;
+                loadBeganAt = Time.realtimeSinceStartup;
             }
             if (prepWaiting && !levelPrepared && LevelStarted())
             {
@@ -568,7 +636,6 @@ namespace UltraBridge
                 UpdateStyleRank();
                 UpdateOil();
                 UpdateArmExport();
-                UpdateFreeze();
                 UpdateDoll();
                 KeepAudio();
                 SendHurtFlash();
@@ -581,6 +648,9 @@ namespace UltraBridge
                     NoBakedOcclusion();
                 }
             }
+            // outside the levelPrepared block on purpose: the load freeze is the one thing that has to be said
+            // while the level is still being prepared, and that is exactly when levelPrepared is false
+            if (Net.Connected) UpdateFreeze();
             Status();
             // started by the Ultracraft launcher (-ultracraft): stay out of sight from the first frame
             if ((Net.Connected || LaunchedForMinecraft) && Time.unscaledTime > nextPark)
@@ -639,6 +709,9 @@ namespace UltraBridge
                 }
                 case "MC_MAX":
                 case "ABSORB":
+                case "TOTEM":
+                case "GOD":
+                case "ARMOR":
                     HandleVitals(cmd, rest);
                     break;
                 case "CONNECTED":
@@ -736,6 +809,7 @@ namespace UltraBridge
                 {
                     // IN <dx> <dy> <wheel> <buttons> <glfw keys...>
                     var a = rest.Split(' ');
+                    lastInAt = Time.unscaledTime;
                     mouseDelta += new Vector2(F(a[0]), -F(a[1]));
                     wheel += F(a[2]);
                     buttons = int.Parse(a[3]);
@@ -778,7 +852,8 @@ namespace UltraBridge
                     TakeOverView();
                     mcInWorld = true;
                     var nm = MonoSingleton<NewMovement>.Instance;
-                    if (nm == null) break;
+                    // no V1 to hand over to: drop any hold this teleport would have armed and answer at once
+                    if (nm == null) { tpHoldUntil = 0f; handoffPending = false; Net.Send("LANDED"); break; }
                     var p = McToUk(new Vector3(F(a[0]), F(a[1]), F(a[2]))) + Vector3.up * 1.5f;
                     // Minecraft put V1 down somewhere (a pearl, a bed, off a horse): it's no longer carried
                     StopCarry();
@@ -800,6 +875,9 @@ namespace UltraBridge
                         cc.rotationX = -F(a[4]);
                         cc.ApplyRotations();
                     }
+                    // no answer to Minecraft on this frame: the handover is not over until V1 is landed and has
+                    // ground under it, and that is what KeepTeleportHold watches for. Answering here is what left
+                    // the world frozen for less than a tick
                     break;
                 }
                 case "BLOCKS":
@@ -831,21 +909,65 @@ namespace UltraBridge
                     }
                     break;
                 }
+                case "SLAMKILL":
+                {
+                    // SLAMKILL id air: a mob died of the ground slam V1 landed a moment ago. ULTRAKILL has its own
+                    // entries for that, sixty on the ground and a hundred and sixty for one that was in the air
+                    // (StyleCalculator's "ground slam", Enemy.SendStyleInformation's AIR SLAM), where any other kill
+                    // of one of Minecraft's mobs pays the flat fifty below
+                    var sm = rest.Split(' ');
+                    if (levelPrepared && proxies.TryGetValue(int.Parse(sm[0]), out var p) && p != null)
+                    {
+                        bool air = sm.Length > 1 && sm[1] == "1";
+                        // AIR SLAM is paid straight to the meter, the ground slam goes through StyleCalculator: only
+                        // the latter carries the air bonus, exactly as in ULTRAKILL
+                        MonoSingleton<StyleHUD>.Instance?.AddPoints(air ? 160 : AirScaled(60), air ? "ultrakill.airslam" : "ultrakill.groundslam", null, p.eid);
+                        if (Time.time - p.airBlastAt < 5f)
+                            MonoSingleton<StyleHUD>.Instance?.AddPoints(120, "ultrakill.fireworks", null, p.eid);
+                        AddMultiKill();
+                    }
+                    break;
+                }
                 case "KILL":
                 {
                     if (levelPrepared && proxies.TryGetValue(int.Parse(rest), out var p) && p != null)
                     {
-                        MonoSingleton<StyleHUD>.Instance?.AddPoints(50, "ultrakill.kill", null, p.eid);
+                        // a plain kill is StyleCalculator's, so it carries the air bonus like ULTRAKILL's own
+                        MonoSingleton<StyleHUD>.Instance?.AddPoints(AirScaled(50), "ultrakill.kill", null, p.eid);
+                        // it was in the air and off the ground when a blast (or the railcannon) hit it: that is
+                        // FIREWORKS, which ULTRAKILL pays 120 for on top of the kill's own fifty
+                        // (Enemy.SendStyleInformation)
+                        if (Time.time - p.airBlastAt < 5f)
+                            MonoSingleton<StyleHUD>.Instance?.AddPoints(120, "ultrakill.fireworks", null, p.eid);
                         // a Minecraft kill also counts toward the combo, which its own death never touches
+                        AddMultiKill();
+                    }
+                    break;
+                }
+                case "SPLAT":
+                {
+                    // SPLAT id: a mob V1 threw broke on landing. ULTRAKILL calls that a splat and pays a hundred for it
+                    // (EnemyIdentifier.Splatter), where a plain kill is fifty, and it counts toward the combo as well
+                    if (levelPrepared && proxies.TryGetValue(int.Parse(rest), out var p) && p != null)
+                    {
+                        MonoSingleton<StyleHUD>.Instance?.AddPoints(100, "ultrakill.splattered", null, p.eid);
                         AddMultiKill();
                     }
                     break;
                 }
                 case "DIED":
                 {
-                    // DIED id x y z w h: a Minecraft mob died (to anything): it bursts like an ULTRAKILL enemy
+                    // DIED <id> <x> <y> <z> <width> <height>: one of Minecraft's mobs died where it fell. Over the
+                    // frame's gore cap the line is held over rather than dropped, or a crowd killed by one explosion
+                    // would all burst in the same frame and stall the frame it happens on
+                    if (goreThisFrame >= MaxGorePerFrame)
+                    {
+                        if (deathBacklog.Count < 512) deathBacklog.Enqueue(line);
+                        break;
+                    }
                     var a = rest.Split(' ');
                     if (!levelPrepared || !originSet || a.Length < 6) break;
+                    goreThisFrame++;
                     proxies.TryGetValue(int.Parse(a[0]), out var p);
                     var feet = McToUk(new Vector3(F(a[1]), F(a[2]), F(a[3])));
                     DeathGore(p, feet + Vector3.up * F(a[5]) * K * 0.5f, F(a[4]) * K, F(a[5]) * K);
@@ -1162,6 +1284,7 @@ namespace UltraBridge
                     break;
                 }
                 case "LOAD":
+                    loadBeganAt = Time.realtimeSinceStartup;
                     SceneHelper.LoadScene(rest);
                     break;
                 default:
@@ -1243,6 +1366,7 @@ namespace UltraBridge
             // hold V1 still until Minecraft has sent the ground and a start position
             nm.rb.isKinematic = true;
             levelPrepared = true;
+            loadBeganAt = 0f;
             Net.Send("READY");
             SendGrindPatterns();
             PrefsOnReady();
@@ -2697,6 +2821,7 @@ namespace UltraBridge
         /// back to V1 when V1 is the nearer one or attacked it (ULTRAKILL's prioritizeEnemiesUnlessAttacked).</summary>
         void Retarget(NewMovement nm)
         {
+            GodIgnore();
             if (ukEnemies.Count == 0) return;
             var v1 = nm.transform.position;
             foreach (var eid in ukEnemies.Values)
@@ -2715,10 +2840,12 @@ namespace UltraBridge
                 }
                 var cur = eid.target;
                 bool onMob = cur != null && cur.isEnemy && cur.isValid && IsProxy(cur.enemyIdentifier);
-                float dV1 = nm.dead ? float.MaxValue : (v1 - pos).sqrMagnitude;
+                // creative (GOD): V1 is not a target at all, but the mobs of Minecraft still are
+                float dV1 = nm.dead || Bridge.God ? float.MaxValue : (v1 - pos).sqrMagnitude;
                 if (V1Aggro(eid))
                 {
-                    if (onMob) TargetV1(eid);
+                    if (Bridge.God) { if (!onMob) eid.target = null; }
+                    else if (onMob) TargetV1(eid);
                     continue;
                 }
                 if (best != null && bestD < dV1 * 0.64f)
@@ -2733,12 +2860,47 @@ namespace UltraBridge
                 {
                     TargetV1(eid);
                 }
+                else if (Bridge.God && !onMob)
+                {
+                    // creative: it was going for a player who can no longer be hit, and nothing else is in reach
+                    eid.target = null;
+                }
             }
+        }
+
+        /// <summary>Which enemies creative mode told to leave V1 alone, and what each had before (see GodIgnore).</summary>
+        readonly Dictionary<int, bool> godIgnored = new Dictionary<int, bool>();
+
+        /// <summary>Creative (GOD): ULTRAKILL picks every enemy's target again on each of its own frames
+        /// (EnemyIdentifier.UpdateTarget reads the player unless IgnorePlayer), so handing it null every half second
+        /// leaves the frames in between still coming for V1. ignorePlayer is the flag that pass checks, so it is held
+        /// for as long as creative does - and the mobs of Minecraft stay targetable, which the global cheat would not
+        /// allow. Each enemy's own value is put back when creative ends.</summary>
+        void GodIgnore()
+        {
+            if (Bridge.God)
+            {
+                foreach (var kv in ukEnemies)
+                {
+                    var eid = kv.Value;
+                    if (eid == null || eid.dead || eid.ignorePlayer) continue;
+                    godIgnored[kv.Key] = false;
+                    eid.ignorePlayer = true;
+                }
+                return;
+            }
+            if (godIgnored.Count == 0) return;
+            foreach (var kv in godIgnored)
+            {
+                if (ukEnemies.TryGetValue(kv.Key, out var eid) && eid != null && !eid.dead) eid.ignorePlayer = kv.Value;
+            }
+            godIgnored.Clear();
         }
 
         static void TargetV1(EnemyIdentifier eid)
         {
             eid.prioritizeEnemiesUnlessAttacked = false;
+            if (Bridge.God) return;
             if (!eid.IgnorePlayer) eid.target = EnemyTarget.TrackPlayer();
         }
 
@@ -2978,15 +3140,35 @@ namespace UltraBridge
 
         static readonly AccessTools.FieldRef<TimeController, float> CurrentStop = AccessTools.FieldRefAccess<TimeController, float>("currentStop");
         bool frozenSent;
+        bool loadFrozenSent;
+        /// <summary>When the load that is still in flight began, or 0 for none. Set by every way a level can start
+        /// (a scene change, a LOAD command, the construct going in to prepare) and cleared the moment the level is
+        /// prepared, so entering a world counts even when the scene name never changed.</summary>
+        float loadBeganAt;
+        /// <summary>A load is long enough that a stuck one would leave Minecraft frozen for good: past this, unfreeze
+        /// and let it run (the worst it can do is carry on while ULTRAKILL finishes).</summary>
+        const float MaxLoadFreeze = 30f;
 
-        /// <summary>ULTRAKILL's hitstop (parries, heavy hits) stops time; Minecraft stops with it for exactly as long.</summary>
+        /// <summary>ULTRAKILL's hitstop (parries, heavy hits) stops time; Minecraft stops with it for exactly as long.
+        /// A scene change stops Minecraft's world too, on a channel of its own: ULTRAKILL spends that second preparing
+        /// the level (the first navmesh bake is 0.6 s of it), and a Minecraft that carried on without it would be a
+        /// window into a world nothing was drawing. Two signals, because the two freezes have different ceilings.</summary>
         void UpdateFreeze()
         {
             var tc = MonoSingleton<TimeController>.Instance;
-            bool frozen = tc != null && Time.timeScale == 0f && CurrentStop(tc) > 0f;
-            if (frozen == frozenSent) return;
-            frozenSent = frozen;
-            Net.Send("FREEZE " + (frozen ? 1 : 0));
+            bool hitstop = tc != null && Time.timeScale == 0f && CurrentStop(tc) > 0f;
+            if (hitstop != frozenSent)
+            {
+                frozenSent = hitstop;
+                Net.Send("FREEZE " + (hitstop ? 1 : 0));
+            }
+            bool loading = !levelPrepared && Net.Connected && loadBeganAt > 0f
+                && Time.realtimeSinceStartup - loadBeganAt < MaxLoadFreeze;
+            if (loading != loadFrozenSent)
+            {
+                loadFrozenSent = loading;
+                Net.Send("LOADFREEZE " + (loading ? 1 : 0));
+            }
         }
 
         /// <summary>ULTRAKILL never pauses its listener itself; if anything left it paused or silent, V1 would be mute.</summary>
@@ -3485,7 +3667,7 @@ namespace UltraBridge
                     if (p.eid != null)
                     {
                         p.eid.dead = true;
-                        MonoSingleton<EnemyTracker>.Instance?.GetCurrentEnemies().Remove(p.eid);
+                        MonoSingleton<EnemyTracker>.Instance?.RemoveEnemy(p.eid);
                     }
                     Destroy(p.gameObject);
                     p = null;
@@ -3507,6 +3689,10 @@ namespace UltraBridge
                 if (a.Length > 11) p.yaw = F(a[11]);
                 if (p.eid != null) p.eid.health = hp / 10f;
                 ProxyFire(p, a.Length > 12 && a[12] == "1");
+                p.flying = a.Length > 14 && a[14] == "1";
+                // where the mob stands, as Minecraft has it: the rocket's red blast and the FIREWORKS style both
+                // turn on this, and nothing else here can answer it
+                if (p.eid != null && p.eid.gce != null) p.eid.gce.onGround = a.Length > 13 && a[13] == "1";
             }
             var gone = new List<int>();
             // (negative ids: debug stand-ins of our own, not Minecraft's)
@@ -3521,7 +3707,7 @@ namespace UltraBridge
                     if (p.eid != null)
                     {
                         p.eid.dead = true;
-                        MonoSingleton<EnemyTracker>.Instance?.GetCurrentEnemies().Remove(p.eid);
+                        MonoSingleton<EnemyTracker>.Instance?.RemoveEnemy(p.eid);
                     }
                     Destroy(p.gameObject);
                 }
@@ -3569,6 +3755,12 @@ namespace UltraBridge
             // what EnemyIdentifier.Awake (skipped for stand-ins) would set up: gasoline and fire need these lists
             eid.flammables = new List<Flammable>();
             eid.burners = new List<Flammable>();
+            // and the ground check, switched off: left running, its Start would switch the collider below back on,
+            // and it has no floor of ULTRAKILL's to watch for anyway. ULTRAKILL's rocket reads gce.onGround to tell
+            // an enemy in mid-air from one standing on something, and that is what makes its blast the red one
+            var gce = root.AddComponent<GroundCheckEnemy>();
+            gce.enabled = false;
+            eid.gce = gce;
             // ULTRAKILL's explosions (rockets, cores, the Knuckleblaster's blast) only hurt an enemy whose own object
             // has a collider: a switched-off one, so it counts without touching anything
             var rootCol = root.AddComponent<BoxCollider>();
@@ -3655,6 +3847,16 @@ namespace UltraBridge
                 return;
             }
             inputHeld = true;
+            // nothing has come in for a while: hand the devices a released state instead of the last one held.
+            // A line only stops meaning anything if it is stale, and a quarter of a second is far longer than the
+            // gap between two frames of input
+            if (lastInAt < 0f || Time.unscaledTime - lastInAt > 0.25f)
+            {
+                held.Clear();
+                buttons = 0;
+                mouseDelta = Vector2.zero;
+                wheel = 0;
+            }
             if (kb == null)
             {
                 InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
@@ -4058,9 +4260,9 @@ namespace UltraBridge
 
         /// <summary>DMG mob damage head explosion parry by: by is the ULTRAKILL enemy that dealt it (0 = V1), so the mob
         /// turns on whoever hurt it.</summary>
-        public void ReportDamage(McProxy p, float multiplier, bool head, bool explosion, Vector3 hitPoint, bool parry = false, int by = 0, bool fire = false)
+        public void ReportDamage(McProxy p, float multiplier, bool head, bool explosion, Vector3 hitPoint, bool parry = false, int by = 0, bool fire = false, bool slam = false)
         {
-            Net.Send("DMG " + p.id + " " + S(multiplier) + " " + (head ? 1 : 0) + " " + (explosion ? 1 : 0) + " " + (parry ? 1 : 0) + " " + by + " " + (fire ? 1 : 0));
+            Net.Send("DMG " + p.id + " " + S(multiplier) + " " + (head ? 1 : 0) + " " + (explosion ? 1 : 0) + " " + (parry ? 1 : 0) + " " + by + " " + (fire ? 1 : 0) + " " + (slam ? 1 : 0));
         }
 
         // ------------------------------------------------------------ blood
@@ -4240,10 +4442,23 @@ namespace UltraBridge
             if (__instance.hitter == "enemy") by = Bridge.I != null ? Bridge.I.AttackerOf(p) : 0;
             // burning (gasoline or the Firestarter's flames): Minecraft fire, which fire resistance shrugs off
             bool fire = __instance.hitter == "fire";
+            // hit by a blast (or the railcannon) while in the air and off the ground: if it dies of that, the kill
+            // is a FIREWORKS one (Enemy.SendStyleInformation). A harmless blast, such as the rocket jump's own,
+            // does no damage and does not count
+            if (multiplier > 0f && (fromExplosion || __instance.hitter == "railcannon") && !p.flying
+                && p.eid != null && p.eid.gce != null && !p.eid.gce.onGround)
+            {
+                p.airBlastAt = Time.time;
+            }
             Bridge.Conduct(__instance, p, sourceWeapon);
+            // an explosion's launch is taken before the "no damage, no hit" early out: V1's rocket jump is a blast that
+            // deals nothing at all, and it still throws everything around it the way it throws him
+            if (fromExplosion) Bridge.I?.KnockMob(p);
             // a touch that does nothing (the JumpStart's spark through the other limbs) isn't a hit in Minecraft
             if (dmg < 0.001f && !parry) return false;
-            Bridge.I?.ReportDamage(p, dmg, head, fromExplosion, hitPoint, parry, by, fire);
+            // ULTRAKILL's ground slam carries its own style entry (GROUND SLAM, or AIR SLAM for one that caught the
+            // mob off the ground); the damage itself arrives in Minecraft as a plain attack, so the hitter rides along
+            Bridge.I?.ReportDamage(p, dmg, head, fromExplosion, hitPoint, parry, by, fire, __instance.hitter == "ground slam");
             // an enemy's swing, stomp or blast that would launch V1 launches the mob too
             if (__instance.hitter == "enemy") Bridge.I?.KnockMob(p);
             if (p.type == "end_crystal") return false;

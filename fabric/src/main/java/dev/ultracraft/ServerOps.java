@@ -106,8 +106,19 @@ public final class ServerOps {
 		return s != null && s.shopTouch;
 	}
 
-	/** Mobs ULTRAKILL's enemies sent flying, and the tick they were: no fall damage for them until they land. */
-	private static final Map<LivingEntity, Integer> FLUNG = new HashMap<>();
+	/** Mobs ULTRAKILL's enemies sent flying, who threw them and the tick they were: no fall damage for them until
+	 * they land, and a mob that breaks on landing dies to the thrower (the fall itself is an environment death with
+	 * nobody to credit, which is why a thrown mob used to pay no style and no P). */
+	private record Flung(ServerPlayer by, int at) {}
+
+	private static final Map<LivingEntity, Flung> FLUNG = new HashMap<>();
+	/** Mobs V1's ground slam just hit, the tick it landed and whether they were off the ground for it: a mob that
+	 * dies of that hit is ULTRAKILL's slam kill, worth more than the fifty a plain kill brings, and one killed in the
+	 * air is an air slam instead. The damage itself is Minecraft's ordinary player attack, so the only place the slam
+	 * can still be told apart is a death a moment after it landed. */
+	private record Slammed(int at, boolean air) {}
+
+	private static final Map<LivingEntity, Slammed> SLAMMED = new HashMap<>();
 	/** Mobs V1 is reeling in, which V1 holds each and since when: while it holds one, the mob does nothing of its own.
 	 * ULTRAKILL's reel leaves a light enemy no way to act (its ground check is off and its speed is rewritten every
 	 * frame), so a reeled-in mob stops walking, jumping and steering instead of fighting the pull. */
@@ -121,9 +132,29 @@ public final class ServerOps {
 	/** Players just in, and the tick their join is dealt with: not while their client is still loading the world. */
 	private static final Map<UUID, Integer> justJoined = new HashMap<>();
 
-	static void fling(LivingEntity le) {
+	static void fling(LivingEntity le, ServerPlayer by) {
 		le.fallDistance = 0;
-		FLUNG.put(le, ticks);
+		FLUNG.put(le, new Flung(by, ticks));
+	}
+
+	/** The V1 behind this mob's launch while it is still in the air, or null: the fall it dies of has no attacker. */
+	static ServerPlayer flungBy(LivingEntity le) {
+		Flung f = FLUNG.get(le);
+		return f == null ? null : f.by();
+	}
+
+	/** The slam behind this mob's death, or null for any other death: false is a slam on the ground (60), true one
+	 * that caught it in the air (160, an air slam). Read once, by the death that it belongs to. */
+	static Boolean slamKill(LivingEntity le) {
+		Slammed s = SLAMMED.remove(le);
+		// the hit itself kills on the spot, so a death two ticks later is something else that caught a survivor
+		return s == null || ticks - s.at() > 2 ? null : s.air();
+	}
+
+	/** Slammed mobs that lived are forgotten: the slam is only a death's witness for a moment after it lands. */
+	private static void landSlammed() {
+		if (SLAMMED.isEmpty()) return;
+		SLAMMED.entrySet().removeIf(en -> en.getKey().isRemoved() || ticks - en.getValue().at() > 10);
 	}
 
 	private static void landFlung() {
@@ -131,8 +162,9 @@ public final class ServerOps {
 		FLUNG.entrySet().removeIf(en -> {
 			LivingEntity le = en.getKey();
 			if (le.isRemoved() || !le.isAlive()) return true;
-			le.fallDistance = 0;
-			int age = ticks - en.getValue();
+			// off: ULTRAKILL's own rule, the fall is wiped every tick until they touch down
+			if (!UltracraftConfig.knockFallDamage) le.fallDistance = 0;
+			int age = ticks - en.getValue().at();
 			return (age > 5 && le.onGround()) || le.isInWater() || age > 600;
 		});
 	}
@@ -250,6 +282,7 @@ public final class ServerOps {
 			return true;
 		});
 		landFlung();
+		landSlammed();
 		landWhipped();
 		if (!RELEASED_WHIP.isEmpty()) RELEASED_WHIP.entrySet().removeIf(en -> ticks >= en.getValue() || en.getKey().isRemoved());
 		if (ticks % 10 == 0) guard("boss party", () -> BossParty.tick(server));
@@ -262,11 +295,17 @@ public final class ServerOps {
 				sp.getFoodData().setFoodLevel(20);
 				sp.getFoodData().setSaturation(5f);
 			}
+			guard("night vision", () -> NightVision.tick(sp));
 			if (!UcNet.isV1(sp)) continue;
-			if (ticks % 40 == 0 && !UkBosses.busy()) guard("spawns", () -> UkSpawns.tick(sp));
-			if (ticks % 10 == 0) guard("bosses", () -> UkBosses.tick(sp, s.playing));
+			if (ticks % 10 == 0) guard("totems", () -> Totems.sync(sp));
+			if (ticks % 10 == 0) guard("armour", () -> Armour.sync(sp));
+			// held: Minecraft's world is frozen for a handover or a load, and the server tick goes on regardless, so
+			// these are the spawners that would otherwise call ULTRAKILL's enemies into a world standing still
+			boolean held = Ultracraft.worldHeld();
+			if (!held && ticks % 40 == 0 && !UkBosses.busy()) guard("spawns", () -> UkSpawns.tick(sp));
+			if (!held && ticks % 10 == 0) guard("bosses", () -> UkBosses.tick(sp, s.playing));
 			if (ticks % 20 == 5) guard("arenas", () -> Arenas.tick(sp));
-			if (ticks % 10 == 0 && CyberGrind.running && CyberGrind.isRunner(sp)) guard("cyber grind", () -> CyberGrind.tick(sp));
+			if (!held && ticks % 10 == 0 && CyberGrind.running && CyberGrind.isRunner(sp)) guard("cyber grind", () -> CyberGrind.tick(sp));
 		}
 		if (ticks % 20 == 0) {
 			for (ServerLevel level : server.getAllLevels()) MobRules.sweep(level);
@@ -285,6 +324,9 @@ public final class ServerOps {
 	static void left(ServerPlayer sp) {
 		State s = STATES.remove(sp.getUUID());
 		if (s != null) for (UkEnemyEntity e : s.enemies.values()) e.discard();
+		Totems.reset(sp);
+		Armour.reset(sp);
+		NightVision.reset(sp);
 		UkBosses.stop(sp, "they left");
 		CyberGrind.runnerLeft(sp);
 		UcNet.setServerV1(sp.level().getServer(), sp.getUUID(), false);
@@ -294,6 +336,8 @@ public final class ServerOps {
 	static void reset() {
 		STATES.clear();
 		FLUNG.clear();
+		SLAMMED.clear();
+		NightVision.clear();
 		UcNet.clearServer();
 		Duels.reset();
 	}
@@ -359,6 +403,7 @@ public final class ServerOps {
 				else if (a[1].equals("ultracraft.infinite-p")) st.infiniteP = on;
 			}
 			case "NOSPAWN" -> UkSpawns.missing(rest.trim());
+			case "TOTEMUSE" -> Totems.use(sp);
 			case "STYLE" -> StyleRewards.rank(sp, Integer.parseInt(rest.trim()));
 			case "SHOP" -> state(sp).shopTouch = rest.trim().equals("1");
 			case "PROGRESS" -> {
@@ -473,7 +518,7 @@ public final class ServerOps {
 					// an enemy's blast: the mobs it throws land without a fall
 					double r = power * 2.0;
 					for (LivingEntity le : level.getEntitiesOfClass(LivingEntity.class, new net.minecraft.world.phys.AABB(x - r, y - r, z - r, x + r, y + r, z + r),
-						m -> m.isAlive() && !(m instanceof Player))) fling(le);
+						m -> m.isAlive() && !(m instanceof Player))) fling(le, sp);
 				}
 			}
 			case "HIT" -> {
@@ -501,12 +546,14 @@ public final class ServerOps {
 			}
 			case "DMG" -> damage(sp, level, a);
 			case "MKNOCK" -> {
-				// MKNOCK id vx vy vz: one of ULTRAKILL's enemies launched this mob as it would launch V1 (its new speed,
-				// blocks a tick); it lands without a fall
-				if (level.getEntity(Integer.parseInt(a[1])) instanceof LivingEntity le && le.isAlive() && !(le instanceof Player)) {
+				// MKNOCK id vx vy vz: an ULTRAKILL blast or swing (V1's own or an enemy's) launched this mob as it would
+				// launch V1 (its new speed, blocks a tick); it lands without a fall. The mob filter still decides whose force
+				// may touch it, so a filtered-out mob is not thrown either.
+				if (level.getEntity(Integer.parseInt(a[1])) instanceof LivingEntity le && le.isAlive() && !(le instanceof Player)
+						&& MobDamageRules.touchable(le)) {
 					le.setDeltaMovement(Double.parseDouble(a[2]), Double.parseDouble(a[3]), Double.parseDouble(a[4]));
 					le.hurtMarked = true;
-					fling(le);
+					fling(le, sp);
 				}
 			}
 			case "WHIP" -> {
@@ -690,6 +737,9 @@ public final class ServerOps {
 		boolean parry = a.length > 5 && a[5].equals("1");
 		int by = a.length > 6 ? Integer.parseInt(a[6]) : 0;
 		boolean fire = a.length > 7 && a[7].equals("1");
+		// ULTRAKILL's ground slam: the mob's stand-in took it in ULTRAKILL and the damage comes back as a plain
+		// attack, so the death has to be told this was a slam to earn GROUND SLAM (or AIR SLAM) instead of a kill
+		boolean slam = a.length > 8 && a[8].equals("1");
 		Entity e = level.getEntity(id);
 		if (e instanceof EndCrystal crystal) {
 			// an end crystal V1 shot or blew up: it goes off, whatever the world-destruction setting
@@ -720,10 +770,12 @@ public final class ServerOps {
 		// Scaling by 10 here as well is what took a full-health V1 from 100 to 0 in one ordinary swing.
 		float scale = enemy != null && le instanceof ServerPlayer v1 && UcNet.isV1(v1) ? 2f
 			: (enemy != null || parry ? 10f : V1_HIT);
+		if (slam) SLAMMED.put(le, new Slammed(ticks, !le.onGround()));
 		le.hurtServer(level, src, amount * scale);
+		if (slam && le.isAlive()) SLAMMED.remove(le);
 		if (enemy != null) {
 			// knocked about by one of ULTRAKILL's enemies: it lands without a fall
-			if (le.isAlive() && !(le instanceof Player)) fling(le);
+			if (le.isAlive() && !(le instanceof Player)) fling(le, sp);
 			return;
 		}
 		if (parry) {
@@ -805,6 +857,8 @@ public final class ServerOps {
 		for (LivingEntity le : level.getEntitiesOfClass(LivingEntity.class, box, m -> m.isAlive() && !(m instanceof Player))) {
 			if (le.distanceToSqr(x, le.getY(), z) > radius * radius) continue;
 			if (!MobDamageRules.touchable(le)) continue;
+			// before the hit: hurtServer runs the death right here, and the death reads this back
+			SLAMMED.put(le, new Slammed(ticks, !le.onGround()));
 			le.invulnerableTime = 0;
 			le.hurtServer(level, level.damageSources().playerAttack(sp), 20f);
 		}

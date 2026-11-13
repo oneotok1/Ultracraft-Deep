@@ -48,6 +48,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -103,6 +104,8 @@ public final class Ultracraft implements ClientModInitializer {
 	public static double mouseDx, mouseDy;
 	private static double lastCursorX, lastCursorY;
 	private static boolean haveCursor;
+	/** Whether the last line handed to ULTRAKILL carried a live input state (see sendInput). */
+	private static boolean inputLive;
 	/** Ultracraft's own keys (V1/Steve, hands): never given up to a rebind. */
 	public static boolean isOwnKey(KeyMapping k) {
 		return k == toggle || k == handsKey || k == sneakKey;
@@ -141,7 +144,40 @@ public final class Ultracraft implements ClientModInitializer {
 	private static KeyMapping sneakKey;
 	private static boolean frozen;
 	private static long frozenAt;
+	/** ULTRAKILL is between scenes and is busy preparing the next level (its first navmesh bake is the better part of
+	 * a second): Minecraft's world waits with it, or the player watches a world nothing is drawing. Its own clock, not
+	 * the hitstop's: a load is allowed to be a great deal longer than a parry's freeze. */
+	private static boolean loadFrozen;
+	private static long loadFrozenAt;
+	/** V1 is being handed over to ULTRAKILL after a teleport (it has to take the view, land V1, build the ground it
+	 * stands on): Minecraft waits for it, and for its "LANDED" once it is done. Its own clock, like the load. */
+	private static boolean handoffFrozen;
+	private static long handoffFrozenAt;
+	/** ULTRAKILL said V1 is down; the freeze now waits for Minecraft's own client to run again, because the stall
+	 * the player sees is the client's (render buffers, chunk rebuilds), not ULTRAKILL's. */
+	private static boolean handoffLanded;
+	private static long handoffFrameAt;
+	/** nanoTime when the handover freeze went on: the frame gate compares against it, so it must share its clock. */
+	private static long handoffFrozenNs;
+	/** The freeze exists for one thing: the stall of V1's first takeover in a world (ULTRAKILL loading its scene
+	 * while Minecraft runs on behind it). Every later teleport - respawning, walking into another dimension, coming
+	 * back out of the Cyber Grind - is quick and reads as a stutter when the world is held for it, so only the
+	 * first handover of each world waits. Cleared when the world is left, and when ULTRAKILL restarts (it
+	 * comes back with no level loaded, so the handover after that is a first one again). */
+	private static boolean handoffUsed;
+	private static int handoffFrames;
+	/** What Minecraft's world should be doing right now, whatever the reasons are. */
+	private static boolean worldFrozen;
+	/** What was last actually handed to the integrated server. worldFrozen alone does not mean it heard it: the
+	 * reasons can turn on while getSingleplayerServer() is still null (the server is created a little after the
+	 * world is entered), and treating the wish as done left the whole freeze never applied. */
+	private static boolean freezePushed;
+	/** The "no server yet" warning is worth one line per wait, not one per tick of the retry below. */
 	private static boolean pauseSent;
+	/** Minecraft's game mode as ULTRAKILL last heard it (GOD 1/0): creative and spectator take no damage at all. */
+	private static boolean godSent;
+	/** "Enemies Ignore Player" switched on by the game mode rather than by hand, and whether the player has since
+	 * switched it off themselves (in which case creative does not switch it back on until they leave it again). */
 	private static LocalPlayer lastPlayer;
 	private static boolean wasDead;
 	private static boolean autoPending = true;
@@ -150,6 +186,11 @@ public final class Ultracraft implements ClientModInitializer {
 	private static long lastBlocksAt;
 	/** How old a pose may be before it counts as "ULTRAKILL is not sending anything right now" (a scene change). */
 	private static final long STALE_POSE_NS = 500_000_000L;
+	/** A frame slower than this is a stall, not a frame: the handover freeze only lifts after a run of frames
+	 * faster than it (60 ms ≈ 16 fps, well under anything a healthy client shows). */
+	private static final long HANDOFF_FRAME_NS = 60_000_000L;
+	/** How many such frames in a row the client must draw before the freeze lifts. */
+	private static final int HANDOFF_FRAMES = 6;
 
 	/** GLFW keys ULTRAKILL can use. */
 	private static final int[] KEYS;
@@ -223,6 +264,19 @@ public final class Ultracraft implements ClientModInitializer {
 				}
 			});
 		}
+		// ULTRAKILL's own HUD (its hud messages, the ones the bridge relays) sits at the same height Minecraft puts the
+		// action bar, so the two lines land on top of each other. Lift ours clear of it; ULTRAKILL draws at full size
+		// and its layout is fixed, so the room has to come from our side.
+		HudElementRegistry.replaceElement(VanillaHudElements.OVERLAY_MESSAGE, old -> (ctx, t) -> {
+			if (!active) {
+				old.render(ctx, t);
+				return;
+			}
+			ctx.pose().pushMatrix();
+			ctx.pose().translate(0f, ACTION_BAR_LIFT);
+			old.render(ctx, t);
+			ctx.pose().popMatrix();
+		});
 		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, Identifier.fromNamespaceAndPath("ultracraft", "v1"), (ctx, t) -> {
 			if (xaeroPresent) return; // xaero's minimap draws after the whole HUD (an InGameHud tail hook): draw over it in InGameHudMixin instead
 			renderOverlay(ctx, t.getGameTimeDeltaPartialTick(false));
@@ -233,6 +287,9 @@ public final class Ultracraft implements ClientModInitializer {
 	static void gunKey(Minecraft mc) {
 		if (hands) setHands(mc, false);
 	}
+
+	/** How far up Minecraft's action bar moves while V1 is out, so it clears ULTRAKILL's own message line (GUI pixels, negative is up). */
+	private static final float ACTION_BAR_LIFT = -30f;
 
 	private static boolean hungry() {
 		LocalPlayer p = Minecraft.getInstance().player;
@@ -402,7 +459,16 @@ public final class Ultracraft implements ClientModInitializer {
 			lastH = h;
 			UkLink.send("SIZE " + w + " " + h);
 		}
-		if (!active) return;
+		if (!active) {
+			// ULTRAKILL holds whatever the last IN said: stop sending without saying so and V1 keeps firing, walking
+			// or holding whatever was down when Minecraft handed the game back. One all-zero line closes it out
+			if (inputLive) {
+				inputLive = false;
+				UkLink.send("IN 0 0 0 0");
+			}
+			return;
+		}
+		inputLive = true;
 		long handle = win.handle();
 		StringBuilder sb = new StringBuilder("IN ");
 		// read the cursor straight from GLFW (with the cursor grabbed it is an unbounded virtual position)
@@ -519,6 +585,31 @@ public final class Ultracraft implements ClientModInitializer {
 		}
 		// a hitstop never lasts this long: don't leave Minecraft frozen if ULTRAKILL never said it ended
 		if (frozen && (System.currentTimeMillis() - frozenAt > 1500 || !active || !UkLink.connected)) setFrozen(mc, false);
+		// nor does a level load: past half a minute it is stuck, and Minecraft is let go rather than held for good
+		if (loadFrozen && (System.currentTimeMillis() - loadFrozenAt > 30000 || !UkLink.connected)) setLoadFrozen(mc, false);
+		// and a handover is a few frames' work at most: if ULTRAKILL never says it landed, let Minecraft run again
+		// a handover is over once ULTRAKILL has landed V1 AND this client is drawing frames again: the stall the
+		// player sees when V1 takes over is Minecraft's own (render buffers, chunk rebuilds), and it happens after
+		// ULTRAKILL's answer, so a clock alone released the freeze straight into it
+		if (handoffFrozen && handoffLanded) {
+			long now = System.nanoTime();
+			long frameNs = handoffFrameAt == 0L ? 0L : now - handoffFrameAt;
+			handoffFrameAt = now;
+			if (frameNs > 0L && frameNs < HANDOFF_FRAME_NS) handoffFrames++;
+			else handoffFrames = 0;
+			boolean settled = handoffFrames >= HANDOFF_FRAMES && now - handoffFrozenNs > 300_000_000L;
+			if (settled) setHandoffFrozen(mc, false);
+		}
+		// and the backstop: a client that never settles is let go rather than held for good
+		if (handoffFrozen && (System.currentTimeMillis() - handoffFrozenAt > 9000 || !UkLink.connected)) {
+			// it never landed, so no handover took place: the next takeover is still owed its freeze
+			handoffUsed = false;
+			setHandoffFrozen(mc, false);
+		}
+		// the reasons can turn on before the integrated server exists: keep asking until it does, or the world is
+		// never told to stop at all
+		if (worldFrozen != freezePushed) applyFreeze(mc);
+		gameModeTick(mc);
 		// Minecraft's pause menu (Esc, or the window losing focus) stops ULTRAKILL too: V1, enemies, projectiles, sound
 		// as Steve without ULTRAKILL's enemies about, ULTRAKILL waits (frozen) until V1 is back
 		boolean paused = (active || steveView) ? mc.isPaused() : everActive && mc.level != null;
@@ -545,6 +636,12 @@ public final class Ultracraft implements ClientModInitializer {
 			// origin goes with it: the next teleportV1 has to send a fresh ORIGIN and TP, not assume the old ones
 			// still hold (that is why switching to Steve and back used to be the only way out).
 			UkLink.pose = null;
+			setHandoffFrozen(mc, false);
+			// the next world's takeover is a first one again
+			handoffUsed = false;
+			// the server this was told to is gone; the next world's has heard nothing
+			freezePushed = false;
+			worldFrozen = false;
 			originSent = false;
 			lastBlocks = null;
 			lastExport = null;
@@ -787,13 +884,72 @@ public final class Ultracraft implements ClientModInitializer {
 		}
 	}
 
+	/**
+	 * Creative and spectator, told to ULTRAKILL: V1 cannot be hurt and its enemies must stop going for him.
+	 * ULTRAKILL picks its targets on its own side (Harmony's Retarget), so the game mode is sent there once and
+	 * the enemies leave V1 alone while still hunting Minecraft's mobs: the switch here would have stopped them
+	 * dead, which is not what an untouchable player wants to watch.
+	 */
+	private static void gameModeTick(Minecraft mc) {
+		if (!UkLink.connected) return;
+		LocalPlayer p = mc.player;
+		boolean untouchable = p != null && mc.level != null && (p.isCreative() || p.isSpectator());
+		if (untouchable != godSent) {
+			godSent = untouchable;
+			UkLink.send("GOD " + (untouchable ? 1 : 0));
+		}
+	}
+
 	/** ULTRAKILL's hitstop: Minecraft's world stops for as long (mobs, projectiles, particles; like /tick freeze). */
 	private static void setFrozen(Minecraft mc, boolean on) {
-		if (on == frozen) return;
 		frozen = on;
 		frozenAt = System.currentTimeMillis();
+		applyFreeze(mc);
+	}
+
+	/** ULTRAKILL's level load: same pause, its own clock and ceiling (see loadFrozen). */
+	private static void setLoadFrozen(Minecraft mc, boolean on) {
+		loadFrozen = on;
+		loadFrozenAt = System.currentTimeMillis();
+		applyFreeze(mc);
+	}
+
+	/** Handing V1 over after a teleport (see handoffFrozen): the short pause that covers the takeover itself. */
+	static void setHandoffFrozen(Minecraft mc, boolean on) {
+		if (on == handoffFrozen) return;
+		long now = System.currentTimeMillis();
+		handoffFrozen = on;
+		handoffFrozenAt = now;
+		if (on) {
+			handoffLanded = false;
+			handoffFrames = 0;
+			handoffFrameAt = 0L;
+			handoffFrozenNs = System.nanoTime();
+		}
+		applyFreeze(mc);
+	}
+
+
+	/** Minecraft's world is frozen while any of the reasons holds: a hitstop is short, a load is not. */
+	private static void applyFreeze(Minecraft mc) {
+		boolean on = frozen || loadFrozen || handoffFrozen;
+		worldFrozen = on;
+		if (on == freezePushed) return;
+		// the integrated server does not exist yet: the call is retried from clientTick until it does, so the flag
+		// must not advance here or the freeze is never pushed
 		MinecraftServer server = mc.getSingleplayerServer();
-		if (server != null) server.execute(() -> server.tickRateManager().setFrozen(on));
+		if (server == null) return;
+		freezePushed = on;
+		server.execute(() -> server.tickRateManager().setFrozen(on));
+	}
+
+	/** Whether Minecraft's world is being held right now, whatever the reason. While it is, nothing on this side
+	 * moves, so nothing may arrive in ULTRAKILL either: a dark spawn or a boss called in now would land in a world
+	 * standing still, and the handover freeze exists exactly to keep the scene quiet until V1 has been landed. The
+	 * server tick keeps running while the world is frozen (only the game elements stop), so the spawners have to ask
+	 * this rather than assume the freeze reaches them. */
+	static boolean worldHeld() {
+		return frozen || loadFrozen || handoffFrozen;
 	}
 
 	private static void setUiMode(Minecraft mc, boolean on) {
@@ -837,6 +993,18 @@ public final class Ultracraft implements ClientModInitializer {
 			originDim = p.level().dimension();
 		}
 		exportBlocks(p.level() instanceof ClientLevel cl ? cl : null, p.blockPosition());
+		// Only a world's first handover is slow: ULTRAKILL loads the scene behind it, and Minecraft holding its
+		// world until the answer ("LANDED") is what hides that stall. Every later teleport - a respawn, another
+		// dimension, out of the Cyber Grind - is quick, and freezing for it reads as a stutter of its own
+		// ULTRAKILL drops every TP it is sent before it says READY, so a handover into a game that is not ready
+		// yet never happens, and holding the world for it would only stall a teleport that nobody takes
+		// only a takeover V1 actually goes for spends the token: a respawn or a dimension change while still Steve
+		// sends a TP that ULTRAKILL drops (it is not in a level yet), and spending the token on that one left the
+		// real handover - the toggling into V1 this freeze exists for - with nothing to hold the world
+		if (!handoffUsed && UkLink.ready && active) {
+			handoffUsed = true;
+			setHandoffFrozen(Minecraft.getInstance(), true);
+		}
 		UkLink.send(String.format(Locale.ROOT, "TP %.3f %.3f %.3f %.2f %.2f", p.getX(), p.getY() + 0.05, p.getZ(), p.getYRot(), p.getXRot()));
 	}
 
@@ -865,6 +1033,8 @@ public final class Ultracraft implements ClientModInitializer {
 			CutoutTextures.reset();
 			ShopExport.reset();
 			Weather.reset();
+			// it has no level of ours loaded either: the next takeover will be slow again, and worth holding for
+			handoffUsed = false;
 			UcNet.toServer("PROGRESS");
 			UcCheats.sendServer();
 		} else if (msg.equals("DISCONNECTED")) {
@@ -873,6 +1043,16 @@ public final class Ultracraft implements ClientModInitializer {
 			end(mc);
 		} else if (msg.startsWith("FREEZE ")) {
 			setFrozen(mc, msg.endsWith("1"));
+		} else if (msg.startsWith("LOADFREEZE ")) {
+			setLoadFrozen(mc, msg.endsWith("1"));
+		} else if (msg.equals("LANDED")) {
+			// V1 has taken the view and is on the ground: the world we were holding for it may run - but only once
+			// this client is drawing frames again, because the stall the freeze hides happens here, not there
+			if (handoffFrozen) {
+				handoffLanded = true;
+				handoffFrames = 0;
+				handoffFrameAt = System.nanoTime();
+			}
 		} else if (msg.startsWith("UKE ")) {
 			Lighting.ukEnemies(msg.substring(4));
 			UcNet.toServer(msg);
@@ -920,7 +1100,7 @@ public final class Ultracraft implements ClientModInitializer {
 
 	/** ULTRAKILL's messages that act on the world, handled by the server (ServerOps). */
 	private static final java.util.regex.Pattern SERVER_OPS = java.util.regex.Pattern.compile(
-		"^(V1STATE|FX|SLAM|RAIL|BOOM|HIT|FIRE|DMG|WHIP|MKNOCK|PIMPACT|PHOLD|PRELEASE|PARRY|PEARN|PADD|GEARADD|UPBUY|UPSET|BOSSPOS|BOSSDEAD|BOSSGONE|GRIND|SPAWNS|UKDEAD|GRINDGONE|UKDIE|PHIT|SHURT|EQUIP|NOSPAWN|STYLE|UKSTYLE|UKMULTI|POOL) ");
+		"^(V1STATE|FX|SLAM|RAIL|BOOM|HIT|FIRE|DMG|WHIP|MKNOCK|PIMPACT|PHOLD|PRELEASE|PARRY|PEARN|PADD|GEARADD|UPBUY|UPSET|BOSSPOS|BOSSDEAD|BOSSGONE|GRIND|SPAWNS|UKDEAD|GRINDGONE|UKDIE|PHIT|SHURT|EQUIP|NOSPAWN|STYLE|UKSTYLE|UKMULTI|POOL|TOTEMUSE)( .*)?$");
 
 	/** A line from the server for our Minecraft side ("C:..." in UcNet), on the client thread. */
 	static void fromServer(String msg) {
@@ -1114,7 +1294,7 @@ public final class Ultracraft implements ClientModInitializer {
 			// hostile mobs (and other V1s) are what ULTRAKILL's enemies go for
 			int hostile = e instanceof Enemy || v1 ? 1 : 0;
 			// on fire: ULTRAKILL's own fire burns on it (EntityMixin keeps Minecraft's flames off it meanwhile)
-			// id,type,x,y,z,w,h,eye,hp,maxhp,hostile,yaw,burning - read back by UltraBridge's ApplyEntities
+			// id,type,x,y,z,w,h,eye,hp,maxhp,hostile,yaw,burning,onGround,flying - read back by UltraBridge's ApplyEntities
 			sb.append(e.getId()).append(',').append(type).append(',');
 			f3(sb, e.getX()).append(',');
 			f3(sb, e.getY()).append(',');
@@ -1124,11 +1304,25 @@ public final class Ultracraft implements ClientModInitializer {
 			f3(sb, e.getEyeHeight()).append(',');
 			f1(sb, le.getHealth()).append(',');
 			f1(sb, le.getMaxHealth()).append(',').append(hostile).append(',');
-			f1(sb, v1 ? e.getYHeadRot() : e.getYRot()).append(',').append(e.isOnFire() ? 1 : 0).append(';');
+			f1(sb, v1 ? e.getYHeadRot() : e.getYRot()).append(',').append(e.isOnFire() ? 1 : 0);
+			// on the ground or in the air: ULTRAKILL's rocket reads this to tell a mob it caught in mid-air from one
+			// standing on something, and that is what makes its blast the red superExplosion (Grenade.Collide)
+			sb.append(',').append(le.onGround() ? 1 : 0).append(',').append(airborne(e) ? 1 : 0).append(';');
 		}
 		// as with the projectiles: an empty list has to follow a full one, or the last stand-ins would never go
 		String out = sb.toString();
 		if (out.length() > 5 || lastEnts.length() > 5) UkLink.send(out);
 		lastEnts = out;
+	}
+
+	// creatures that live in the air, so ULTRAKILL never treats a blast on one of them as the red one (a flying enemy
+	// is excluded there, Grenade.Collide). Minecraft has no such flag to ask for: FlyingAnimal covers the bee and the
+	// parrot alone, so everything else goes by type
+	private static boolean airborne(Entity e) {
+		EntityType<?> t = e.getType();
+		return t == EntityType.PHANTOM || t == EntityType.GHAST || t == EntityType.HAPPY_GHAST
+			|| t == EntityType.ALLAY || t == EntityType.BAT || t == EntityType.BEE || t == EntityType.PARROT
+			|| t == EntityType.VEX || t == EntityType.BLAZE || t == EntityType.WITHER
+			|| t == EntityType.ENDER_DRAGON;
 	}
 }

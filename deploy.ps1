@@ -2,7 +2,7 @@
 # Any failed step stops the whole script: a build that fails but still copies and exits 0
 # is how a stale dll reached the game once already.
 $root = 'C:\Minecraft\Ultracraft-mod\work\uc-publish-v1.0.12'
-$ver  = '1.1.1'
+$ver  = '1.1.3'
 $game = 'C:\SteamLibrary\steamapps\common\ULTRAKILL'
 
 # An inherited PATHEXT without .EXE makes every bare command name unresolvable here, so restore

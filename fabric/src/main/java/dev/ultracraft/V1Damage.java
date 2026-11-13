@@ -44,6 +44,9 @@ public final class V1Damage {
 		// V1's health is scaled to Steve's maximum (see Vitals on the bridge side): the same fraction of the bar
 		// rather than a fixed 5 per half heart, so a health boost makes each hit cost the same share
 		int uk = Math.max(1, Math.round(dealt * UkLink.maxHp / player.getMaxHealth()));
+		// the blow that would have been V1's last is the one Minecraft's death protection wards off, and it is asked
+		// for here because Steve's own health never reaches zero while V1's lives in ULTRAKILL
+		if (uk >= UkLink.hp && Totems.trySave(sp, source)) return true;
 		Mob mob = swingMob(source);
 		if (mob != null) {
 			// ULTRAKILL flashes the mob and gives V1 the parry window before the hit lands

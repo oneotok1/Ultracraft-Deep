@@ -321,6 +321,8 @@ final class UkBosses {
 		List<Mod> can = new ArrayList<>();
 		for (Mod m : MODS) {
 			if (m.key.equals("eclipse") && !sp.level().dimensionType().hasSkyLight()) continue;
+			// Boss Trait Filter: left out of the draw for every boss
+			if (UltracraftConfig.traitOff.getOrDefault(m.key, Boolean.FALSE)) continue;
 			can.add(m);
 		}
 		while (mods.size() < n && !can.isEmpty()) {
@@ -391,10 +393,10 @@ final class UkBosses {
 		title(sp, Component.translatable("WARNING").withStyle(ChatFormatting.RED, ChatFormatting.BOLD),
 			Component.translatable("%s IS COMING", bossName(b)).withStyle(ChatFormatting.RED), 10, 70, 20);
 		sp.level().playSound(null, sp.getX(), sp.getY(), sp.getZ(), SoundEvents.RAID_HORN, SoundSource.HOSTILE, 64f, 1f);
-		sp.sendSystemMessage(Component.translatable("[Ultracraft] WARNING: %s is coming in %s seconds, where the red pillar stands. Get ready!",
-			bossName(b), warnLeft / 20).withStyle(ChatFormatting.RED));
+		// the title and this one line are the warning; the chat keeps only what the boss is carrying
 		sp.sendSystemMessage(Component.translatable("[Ultracraft] ").withStyle(ChatFormatting.RED).append(describeColored()));
-		UcNet.send(sp, "HUD <color=red>WARNING</color>: " + b.name + " is coming. " + warnLeft / 20 + " seconds to get ready.");
+		UcNet.send(sp, "HUD <color=red>WARNING</color>: " + b.name + " is coming in " + warnLeft / 20
+			+ " seconds, where the red pillar stands.");
 		// the other players hear it too
 		for (ServerPlayer o : sp.level().getServer().getPlayerList().getPlayers()) {
 			if (o != sp) o.sendSystemMessage(Component.translatable("[Ultracraft] %s is coming for %s.", bossName(b), sp.getName().getString()).withStyle(ChatFormatting.RED));
@@ -426,7 +428,6 @@ final class UkBosses {
 			sp.displayClientMessage(bar.withStyle(ChatFormatting.RED), true);
 		}
 		if (shopping || warnLeft % 20 != 0) return;
-		if (secs == 10) UcNet.send(sp, "HUD " + boss.name + " arrives in <color=red>10 seconds</color>.");
 		if (secs <= 5 && secs > 0 && playing) {
 			title(sp, Component.literal(Integer.toString(secs)).withStyle(ChatFormatting.RED, ChatFormatting.BOLD), Component.literal(boss.name).withStyle(ChatFormatting.RED), 0, 20, 5);
 			level.playSound(null, sp.getX(), sp.getY(), sp.getZ(), SoundEvents.NOTE_BLOCK_BASEDRUM.value(), SoundSource.HOSTILE, 2f, 0.6f);

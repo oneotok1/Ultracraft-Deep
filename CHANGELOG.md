@@ -3,7 +3,20 @@
 Every released version of Ultracraft, newest first. Each heading links to that
 release on GitHub; the current download lives on the [latest release](https://github.com/oneotok1/Ultracraft-Deep/releases/latest).
 
-## [1.1.2](https://github.com/oneotok1/Ultracraft-Deep/releases/tag/v1.1.2) — 2026-11-08
+## [1.1.3](https://github.com/oneotok1/Ultracraft-Deep/releases/tag/v1.1.3) — 2026-11-13
+
+- **Minecraft armour now counts.** Armour, protection and resistance reduce what ULTRAKILL enemies do to V1, using Minecraft's own formula.
+- **Creative mode stops the fight.** In creative or spectator, ULTRAKILL enemies no longer track V1 and nothing can hurt it — they still go after everything else.
+- **The undying totem runs Minecraft's own check.** A totem in either hand saves V1 the way it saves Steve, sound and particles included, and totems added by other mods work too.
+- **Minecraft mobs follow ULTRAKILL's own rules.** Whether a mob flung by a slam or a blast dies on landing is now a switch (on by default). ULTRAKILL's blasts throw Minecraft mobs the way they throw V1, V1's own rocket jump throws them too, slam height follows ULTRAKILL's own numbers, and a rocket that catches something in the air goes off in ULTRAKILL's red blast.
+- **Two new filters.** Pick which of the 19 ULTRAKILL enemies may spawn at all, and which of the 16 boss modifiers may roll.
+- **The world holds still while V1 takes over.** During the first takeover the Minecraft side is frozen like a single-player pause — mobs stand still, nothing falls, nothing spawns — and resumes once V1 is on the ground with the terrain under it built. Going back and forth afterwards no longer freezes anything.
+- **Dark arenas get night vision.** The Cyber Grind and all twelve boss arenas light up on entry and go back to normal on exit; potions you drank yourself are left alone.
+- **The Grind gathers its drops and XP at the shop.** A finished wave moves the drops and experience orbs to the shop's ledge; quit or die mid-run and they are put where you came in, with a line in chat to say so.
+- **Style scoring follows ULTRAKILL.** A mob killed by the slam scores GROUND SLAM (60), or AIR SLAM (160) when the slam caught it off the ground, instead of a plain kill; the in-air multiplier applies where ULTRAKILL applies it and is left off the fixed-value entries.
+- **A few things fixed.** The charge upgrade now cools the shotgun's overheat down as well as its two charges; going back to Steve with the trigger held no longer leaves ULTRAKILL firing; and Minecraft's action bar sits higher, clear of ULTRAKILL's message box.
+
+## [1.1.2](https://github.com/oneotok1/Ultracraft-Deep/releases/tag/v1.1.2) — 2026-11-09
 
 - **Calm music is the Cyber Grind's alone.** A run opens on the track's battle version and drops to the calm one between waves (*Cyber Grind Calm Music*).
 - **Music filter.** A new *Music Filter* page decides song by song which ones may come up in the random draw. Whether ULTRAKILL's fight music plays in Minecraft's world is a separate switch.
