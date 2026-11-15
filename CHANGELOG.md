@@ -3,7 +3,7 @@
 Every released version of Ultracraft, newest first. Each heading links to that
 release on GitHub; the current download lives on the [latest release](https://github.com/oneotok1/Ultracraft-Deep/releases/latest).
 
-## Unreleased
+## [1.1.4](https://github.com/oneotok1/Ultracraft-Deep/releases/tag/v1.1.4) — 2026-11-15
 
 - **A General upgrade category.** The upgrade page gains a ninth category, General, with one entry for now and more to come.
 - **V1 no longer drowns.** A new setting, on by default.

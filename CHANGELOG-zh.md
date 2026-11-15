@@ -3,7 +3,7 @@
 Ultracraft 全部已发布版本，由新到旧。每个标题指向 GitHub 上对应的 Release；
 当前版本请到[最新发布](https://github.com/oneotok1/Ultracraft-Deep/releases/latest)下载。
 
-## 未发布
+## [1.1.4](https://github.com/oneotok1/Ultracraft-Deep/releases/tag/v1.1.4) — 2026-11-15
 
 - **升级页通用分类** 终端升级页新增第 9 个分类「通用」，暂只有一个新的，后续会有别的选项可升级。
 - **V1 不再溺水** 新增开关（默认开）。
