@@ -106,11 +106,11 @@ public final class PlaceRule {
 		// level with the floor: the bridge block, always allowed
 		if (levelWithFloor(box, player)) return false;
 		// A bridge block hangs below the floor he walks on - its top is the floor, so its bottom is a block under it.
-		// Anything whose bottom is at the floor or above would be standing on that floor, and if it is also where his
-		// feet are it is the block that lifts him onto his own wall. Asking for the bottom settles that without
-		// depending on which square he is nominally in, and the margin is wide enough to survive the drift between
-		// the client's pose and the server's.
-		if (box.minY >= floorY(player) - 0.05 && feetOver(box, player, 0.4)) return true;
+		// The block that lifts him onto his own wall is the one filling the layer his feet are in, and only that one:
+		// it stands on the floor he is on, and it is in the column his feet are in. Its TOP is what he would end up
+		// standing on, so a block higher up is not it - and blocks higher than his head are his to place, which is
+		// exactly putting one on top of a wall beside him (the wall's side face at eye height and above).
+		if (box.minY >= floorY(player) - 0.05 && box.maxY <= floorY(player) + 1.05 && feetOver(box, player, 0.4)) return true;
 		return touchesBody(box, player);
 	}
 }

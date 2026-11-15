@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace UltraBridge
 {
-    /// <summary>The terminal's tips of the day, in Chinese: our own eleven plus ULTRAKILL's thirty-eight.</summary>
+    /// <summary>The terminal's tips of the day, in Chinese: our own 13 plus ULTRAKILL's 38.</summary>
     static class TipTextsZh
     {
         internal static readonly string[] Minecraft =
@@ -18,7 +18,9 @@ namespace UltraBridge
             "Minecraft 的生物跟其他敌人一样会<color=#FF4343>流血</color>。\n\n凑近点：它们的血能给你<color=#FF4343>回血</color>。",
             "<color=#FF4343>火箭</color>或<color=#FF4343>核心</color>被爆炸射线打中会造成<color=#FF4343>核爆</color>。\n\n周围的地形可就别想保住了。",
             "从足够高的地方来一记下砸，<color=#FF4343>可以直接破坏地面</color>。",
-            "<color=#FF4343>电子血宫</color>就在这儿，围绕这台终端机开打。\n\nV1 战死或逃跑时，挑战结束。",
+            "<color=#FF4343>电子血宫</color>就在这儿，围绕这台终端机或进入电子血宫战斗。\n\nV1 战死或离开时，挑战结束。",
+            "你的<color=#FF4343>翅膀</color>似乎增强了？可以携带更多武器了。\n\n当然，这不影响设置的装备顺序。",
+            "现在你有条件慢下来了\n\n按 <color=#FF4343>Left Alt</color> 潜行，搭方块可方便了。",
         };
 
         internal static readonly Dictionary<string, string> Levels = new Dictionary<string, string>

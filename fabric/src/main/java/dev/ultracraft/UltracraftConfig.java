@@ -133,6 +133,9 @@ public final class UltracraftConfig {
 	/** Mobs flung by a slam shockwave, an explosion or a punch take fall damage when they land.
 	 * Off: ULTRAKILL's own rule, nothing hurts them until they are back on the ground. */
 	public static boolean knockFallDamage = true;
+	/** V1 does not drown: its breath never runs out, so the bubbles never appear and the water never hurts.
+	 * Off: Minecraft's own rule, as V1 has always had it. */
+	public static boolean noDrown = true;
 	/** Mob Damage Filter: defines which Minecraft mobs ULTRAKILL weapons, enemies, Whiplash, and explosions can interact with. Excluded mobs are completely ignored. */
 	public static boolean dmgHostile = true;
 	public static boolean dmgNeutral = true;
@@ -177,7 +180,7 @@ public final class UltracraftConfig {
 	private static final String[] KEYS = {"v1Height", "autoV1", "ukSpawns", "mcMobs", "sharpShop", "bosses", "bossMinutes", "bossDifficulty", "traitChance", "bossWarnSeconds", "bossIntros", "bossDeaths", "bossArenas",
 		"allGear", "playerBlockDamage", "enemyBlockDamage", "blastFireOut", "nukesHitAsMelee", "impactFrames", "launchUltrakill", "opShop", "ukFpsCap", "steveEnemies", "fightMusic", "bossThemes",
 		"calmMusic", "hushMcMusic", "worldMusic", "styleRewards", "styleStreakText", "styleStreakTitle", "arenas", "grindArenas", "grindVoidDeath", "grindSubWaves", "grindShuffle", "lockStep", "lowLatency",
-		"effects", "stainCap", "extraGore", "terrainRange", "ultrakillDir", "setupUltrakill", "teammateMarkers", "absorbCeiling", "airSneakHold", "parryEverything", "knockFallDamage",
+		"effects", "stainCap", "extraGore", "terrainRange", "ultrakillDir", "setupUltrakill", "teammateMarkers", "absorbCeiling", "airSneakHold", "parryEverything", "knockFallDamage", "noDrown",
 		"dmgHostile", "dmgNeutral", "dmgPassive", "dmgOther"};
 
 	private static final String COMMENT = "Ultracraft (most of this is on the Ultracraft settings screen): v1Height = ULTRAKILL render height (0 = full window, lower = faster);"
@@ -191,7 +194,8 @@ public final class UltracraftConfig {
 		+ " effects = 2 high, 1 medium, 0 low; stainCap = blood stains kept on blocks (0 none); extraGore = Ultracraft's extra death blood; terrainRange = blocks of terrain sent to ULTRAKILL (64-128);"
 		+ " ultrakillDir = ULTRAKILL's folder, only if Ultracraft can't find it through Steam (it sets up BepInEx and the UltraBridge plugin there); setupUltrakill = you let Ultracraft set ULTRAKILL up (and keep its plugin up to date); teammateMarkers = the other players' names and health over ULTRAKILL's view;"
 		+ " dmgHostile / dmgNeutral / dmgPassive / dmgOther = allow ULTRAKILL to interact with hostile, neutral, passive, or other mobs (excluded mobs are completely immune); dmg.<entity id> = per-mob override;"
-		+ " spawn.<EnemyType> = false leaves that ULTRAKILL enemy out of the spawn tables (Enemy Spawn Filter)";
+		+ " spawn.<EnemyType> = false leaves that ULTRAKILL enemy out of the spawn tables (Enemy Spawn Filter);"
+		+ " noDrown = V1 never runs out of breath";
 
 	private UltracraftConfig() {}
 
@@ -274,6 +278,7 @@ public final class UltracraftConfig {
 			airSneakHold = bool(p, "airSneakHold", airSneakHold);
 			parryEverything = bool(p, "parryEverything", parryEverything);
 			knockFallDamage = bool(p, "knockFallDamage", knockFallDamage);
+			noDrown = bool(p, "noDrown", noDrown);
 			dmgHostile = bool(p, "dmgHostile", dmgHostile);
 			dmgNeutral = bool(p, "dmgNeutral", dmgNeutral);
 			dmgPassive = bool(p, "dmgPassive", dmgPassive);
@@ -361,6 +366,7 @@ public final class UltracraftConfig {
 		p.setProperty("airSneakHold", Boolean.toString(airSneakHold));
 		p.setProperty("parryEverything", Boolean.toString(parryEverything));
 		p.setProperty("knockFallDamage", Boolean.toString(knockFallDamage));
+		p.setProperty("noDrown", Boolean.toString(noDrown));
 		p.setProperty("dmgHostile", Boolean.toString(dmgHostile));
 		p.setProperty("dmgNeutral", Boolean.toString(dmgNeutral));
 		p.setProperty("dmgPassive", Boolean.toString(dmgPassive));

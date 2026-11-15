@@ -863,7 +863,11 @@ namespace UltraBridge
                     fallPeak = p.y;
                     nm.rb.isKinematic = false;
                     nm.rb.velocity = Vector3.zero;
-                    HoldAfterTeleport(p);
+                    // only the first handover is held: its scene load is what the freeze covers. Any later teleport
+                    // (/tp, a respawn, a dimension change) lands V1 and lets it move that same frame
+                    bool hold = a.Length >= 6 && a[5].Trim() == "1";
+                    if (hold) HoldAfterTeleport(p);
+                    else if (handoffPending) EndHandoff();
                     // the Sandbox's start trigger is gone, so switch V1 on ourselves (movement, camera, guns, fists, HUD)
                     tpReceived = true;
                     if (!v1Landed) LandV1(nm);
@@ -2826,7 +2830,11 @@ namespace UltraBridge
             var v1 = nm.transform.position;
             foreach (var eid in ukEnemies.Values)
             {
-                if (eid == null || eid.dead || eid.IgnorePlayer && !eid.AttackEnemies) continue;
+                // in creative the enemies are told to ignore the player (GodIgnore), which is not the same as being
+                // told to ignore everything: an enemy that leaves V1 alone has to keep hunting Minecraft's mobs, or
+                // the whole battlefield turns its back on them
+                if (eid == null || eid.dead) continue;
+                if (!Bridge.God && eid.IgnorePlayer && !eid.AttackEnemies) continue;
                 // a boss came for the V1s and nothing else (AimBosses); with ours down, the others go for teammates there too
                 if (IsBossEid(eid) || AimOf(eid) > 0) continue;
                 var pos = eid.transform.position;

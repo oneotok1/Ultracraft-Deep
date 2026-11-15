@@ -11,10 +11,13 @@
 //   Bloodfist (punches heal), Arc (punches arc lightning to enemies nearby), Counterblast (a parry blasts what's in
 //   front), Adrenaline (a parry refills stamina)
 // - Knuckleblaster: Shockwave (bigger blast wave), Demolition (punches dig a wider hole), Detonator (punches that land
-//   explode), Seismic (slams erupt), Ironclad (less damage taken while it's out), Overcharge (punches recharge faster)
+//   explode), Ironclad (less damage taken while it's out), Overcharge (punches recharge faster)
 // - Whiplash: Reel (throws again sooner), Barbs (the hook itself hurts), Grapple (it bites into blocks and yanks V1
 //   there), Live Wire (a caught enemy is shocked), Slingshot (a pull ends in a launch), Ripcord (a reeled-in enemy
 //   bursts)
+// - General: Seismic (slams erupt; it moved here from the Knuckleblaster, being about V1's own slam), Hard Damage
+//   Recovery (hard damage clears faster with a high style rank, and the top three levels clear it outright from SSS, SS
+//   and S up)
 // Bigger blasts are bigger in every way: the fireball, its smoke and light, the hurt, and the crater in Minecraft. The
 // mini nuke grows with the biggest Payload V1 has.
 
@@ -50,9 +53,11 @@ namespace UltraBridge
             new[] { "arm0", "Feedbacker", "reflex", "Reflex", "sender", "Return to Sender", "bloodfist", "Bloodfist", "arc", "Arc",
                 "counter", "Counterblast", "adrenaline", "Adrenaline" },
             new[] { "arm1", "Knuckleblaster", "shockwave", "Shockwave", "demolition", "Demolition", "detonator", "Detonator",
-                "ironclad", "Ironclad", "overcharge", "Overcharge", "seismic", "Seismic" },
+                "ironclad", "Ironclad", "overcharge", "Overcharge" },
             new[] { "arm2", "Whiplash", "reel", "Reel", "barbs", "Barbs", "grapple", "Grapple", "livewire", "Live Wire",
                 "slingshot", "Slingshot", "ripcord", "Ripcord" },
+            // no Power here (TracksOf skips it): everything on this page is about V1 itself
+            new[] { "gen", "General", "seismic", "Seismic", "recovery", "Hard Damage Recovery" },
         };
 
         // levels past 11 (Power) and 5 (blast sizes) are the OP Shop's
@@ -75,6 +80,24 @@ namespace UltraBridge
         static readonly float[] LiveWireTable = { 0f, 0.5f, 1f, 1.5f, 2.5f };
         static readonly float[] SlingshotTable = { 0f, 20f, 30f, 40f, 55f };
         static readonly float[] RipcordTable = { 0f, 0.5f, 0.75f, 1f, 1.4f };
+        // General's Hard Damage Recovery: x1 to x6 (levels 12 to 15 stay at x6; they buy the instant clears instead)
+        static readonly float[] RecoveryTable = { 1f, 1.15f, 1.35f, 1.6f, 1.9f, 2.25f, 2.65f, 3.1f, 3.65f, 4.3f, 5f, 6f, 6f, 6f, 6f };
+        /// <summary>How much faster hard damage clears (and its cooldown runs down): x1 at level 1 to x6 at 12.</summary>
+        public static float RecoverySpeed(int level) => At(RecoveryTable, level);
+
+        static readonly AccessTools.FieldRef<NewMovement, bool> CantInstaHeal = AccessTools.FieldRefAccess<NewMovement, bool>("cantInstaHeal");
+
+        /// <summary>Levels 13 to 15 clear hard damage outright from a high enough style rank (SSS, SS and S): while
+        /// that holds, it is not merely clearing fast, it is never there.</summary>
+        public static bool HardDamageClears(NewMovement nm)
+        {
+            int level = UpLevel("gen.recovery");
+            if (level < 13 || nm == null) return false;
+            var hud = MonoSingleton<StyleHUD>.Instance;
+            if (hud == null) return false;
+            int clearFrom = level >= 15 ? 4 : level >= 14 ? 5 : 6;
+            return hud.rankIndex >= clearFrom && !CantInstaHeal(nm);
+        }
 
         /// <summary>An upgrade's level, as far as it goes now (levels bought in the OP Shop rest while it's off).</summary>
         public static int UpLevel(string key) => key != null && UcUp.TryGetValue(key, out var t) ? Mathf.Clamp(t.level, 1, Mathf.Max(1, t.max)) : 1;
@@ -163,6 +186,10 @@ namespace UltraBridge
                 case "adrenaline": return level <= 1 ? "off" : "+" + At(AdrenalineTable, level) + " stamina" + (level >= 5 ? " (+25 HP extra)" : "");
                 case "detonator": return level <= 1 ? "off" : Mathf.RoundToInt(At(DetonatorTable, level) * 100f) + "% blast";
                 case "seismic": return level <= 1 ? "off" : Mathf.RoundToInt(At(SeismicTable, level) * 100f) + "% blast";
+                case "recovery":
+                    if (level <= 1) return "off";
+                    string clear = level >= 15 ? ", cleared from S up" : level >= 14 ? ", cleared from SS up" : level >= 13 ? ", cleared from SSS up" : "";
+                    return "x" + RecoverySpeed(level).ToString("0.##") + " hard damage recovery" + clear;
                 case "ironclad": return level <= 1 ? "off" : "-" + Mathf.RoundToInt(At(IroncladTable, level) * 100f) + "% damage taken";
                 case "overcharge": return "x" + At(RateTable, level).ToString("0.##") + " recharge";
                 case "grapple": return level <= 1 ? "off" : "yank speed " + At(GrappleTable, level);
@@ -205,7 +232,8 @@ namespace UltraBridge
                 case "arm0.counter": return "A parry sets off a blast in front of V1 that only hurts enemies; its size is relative to the default blast.";
                 case "arm0.adrenaline": return "A parry refills stamina (at the top, heals too).";
                 case "arm1.detonator": return "Punches that land blow up on what they hit.";
-                case "arm1.seismic": return "Slams erupt in a blast around V1 when they land.";
+                case "gen.seismic": return "Slams erupt in a blast around V1 when they land.";
+                case "gen.recovery": return "Hard damage (the health a hit takes out of reach for a while) clears faster the higher V1's style rank is; the top levels clear it outright from SSS, SS and S up.";
                 case "arm1.ironclad": return "V1 takes less damage while the Knuckleblaster is out.";
                 case "arm1.overcharge": return "Punch stamina comes back faster with the Knuckleblaster out.";
                 case "arm2.grapple": return "The hook bites into blocks and yanks V1 to them; the yank speed is an instant velocity.";

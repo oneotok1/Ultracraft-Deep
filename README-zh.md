@@ -30,7 +30,7 @@ Minecraft 启动时崩溃并提示 “Unsupported class file major version 65”
 
 点击 **Ultracraft...**（位于标题界面、暂停菜单、选项界面，或输入指令 `/uc settings`），各专项设置页面如下：
 - **Enemies & Bosses**：Minecraft 生物、ULTRAKILL 敌人、Boss（生成间隔、难度倍率、词条概率）、竞技场、史蒂夫状态下的敌人遭遇，用于定制交互名单的 **Mob Damage Filter**（生物伤害过滤），用于挑选暗处会出现哪些 ULTRAKILL 敌人的 **Enemy Spawn Filter**（敌人刷新过滤），以及用于把某些词条从BOSS随机池里排除的 **Boss Trait Filter**（BOSS词条过滤器）。
-- **Gameplay**：自动成为 V1、方块破坏规则、爆炸灭火、被击飞生物的摔落伤害、吸收护盾算作血上限、打击定格时长、随 Minecraft 同步自启 ULTRAKILL。
+- **Gameplay**：自动成为 V1、方块破坏规则、爆炸灭火、被击飞生物的摔落伤害、V1 是否溺水、吸收护盾算作血上限、打击定格时长、随 Minecraft 同步自启 ULTRAKILL。
 - **Shop & Rewards**：风格奖励结算、连击提示文字、OP 商店超额数值、高分辨率商店界面。
 - **Performance**：ULTRAKILL 画面渲染分辨率与帧率上限、锁步同步、低延迟帧。
 - **Music**：ULTRAKILL 战斗音乐、Boss 主题曲、非战斗平静曲目、各项音量调节。

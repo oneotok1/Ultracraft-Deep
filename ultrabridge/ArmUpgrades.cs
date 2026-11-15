@@ -179,10 +179,10 @@ namespace UltraBridge
             }
         }
 
-        /// <summary>A slam landed (Seismic): a blast around V1 that only hurts enemies, bigger from higher up.</summary>
+        /// <summary>A slam landed (General's Seismic): a blast around V1 that only hurts enemies, bigger from higher up.</summary>
         public void Seismic(NewMovement nm, float drop)
         {
-            float size = Arm("arm1.seismic");
+            float size = Arm("gen.seismic");
             if (size <= 0f || drop < 1f) return;
             var feet = nm.gc != null ? nm.gc.transform.position : nm.transform.position;
             SpawnBlast(feet, size * (1f + Mathf.Min(drop / 20f, 1f)), false, false);

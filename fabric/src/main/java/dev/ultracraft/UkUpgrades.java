@@ -13,7 +13,7 @@ import java.util.Map;
  * applies itself (parried projectiles).
  */
 final class UkUpgrades {
-	enum Kind { POWER, SPECIAL, BLAST }
+	enum Kind { POWER, SPECIAL, BLAST, GEN }
 
 	record Track(String key, String group, String name, Kind kind) {
 		/** How many levels it has (more with the OP Shop on). */
@@ -22,12 +22,14 @@ final class UkUpgrades {
 				case POWER -> 1 + POWER_COST.length + (UltracraftConfig.opShop ? OP_POWER_LEVELS : 0);
 				case BLAST -> 1 + SPECIAL_COST.length + (UltracraftConfig.opShop ? OP_BLAST_LEVELS : 0);
 				case SPECIAL -> 1 + SPECIAL_COST.length;
+				case GEN -> 1 + RECOVERY_COST.length;
 			};
 		}
 
 		/** What reaching level (2 to max) costs. */
 		int costTo(int level) {
 			if (level < 2 || level > max()) return 0;
+			if (kind == Kind.GEN) return RECOVERY_COST[level - 2];
 			int[] base = kind == Kind.POWER ? POWER_COST : SPECIAL_COST;
 			if (level - 2 < base.length) return base[level - 2];
 			// the OP Shop's levels past the usual top
@@ -41,6 +43,10 @@ final class UkUpgrades {
 
 	private static final int[] POWER_COST = {2500, 5000, 7500, 10000, 15000, 20000, 30000, 40000, 55000, 75000};
 	private static final int[] SPECIAL_COST = {5000, 15000, 35000, 70000};
+	/** General's own track: a first level at a million, then +0.5M a level, +1M from level 6, +2M from level 11 (102M in all). */
+	private static final int[] RECOVERY_COST = {
+		1_000_000, 1_500_000, 2_000_000, 2_500_000, 3_500_000, 4_500_000, 5_500_000,
+		6_500_000, 7_500_000, 9_500_000, 11_500_000, 13_500_000, 15_500_000, 17_500_000};
 	/** OP Shop: Power 400% to 1500% (one level per 100%), blasts 300% to 1500%. */
 	private static final int OP_POWER_LEVELS = 12, OP_BLAST_LEVELS = 8;
 	private static final int OP_POWER_COST = 25000, OP_BLAST_COST = 20000;
@@ -54,19 +60,22 @@ final class UkUpgrades {
 		group("arm0", "Feedbacker", "Reflex", "reflex", "Return to Sender", "sender", "Bloodfist", "bloodfist", "Arc", "arc",
 			"Counterblast", "counter", "Adrenaline", "adrenaline");
 		group("arm1", "Knuckleblaster", "Shockwave", "shockwave", "Demolition", "demolition", "Detonator", "detonator",
-			"Ironclad", "ironclad", "Overcharge", "overcharge", "Seismic", "seismic");
+			"Ironclad", "ironclad", "Overcharge", "overcharge");
 		group("arm2", "Whiplash", "Reel", "reel", "Barbs", "barbs", "Grapple", "grapple", "Live Wire", "livewire",
 			"Slingshot", "slingshot", "Ripcord", "ripcord");
+		group("gen", "General", "Seismic", "seismic", "Hard Damage Recovery", "recovery");
 	}
 
 	/** A weapon or arm: its name, then each upgrade of its own as name, key. */
 	private static void group(String g, String name, String... specials) {
 		GROUPS.put(g, name);
-		add(new Track(g + ".power", g, "Power", Kind.POWER));
+		// General has no Power of its own: nothing multiplies damage by it
+		if (!g.equals("gen")) add(new Track(g + ".power", g, "Power", Kind.POWER));
 		for (int i = 0; i + 1 < specials.length; i += 2) {
 			String t = specials[i + 1];
 			// the upgrades that size a blast go on to 1500% in the OP Shop
-			Kind kind = t.equals("payload") || t.equals("shockwave") ? Kind.BLAST : Kind.SPECIAL;
+			Kind kind = t.equals("recovery") ? Kind.GEN
+				: t.equals("payload") || t.equals("shockwave") ? Kind.BLAST : Kind.SPECIAL;
 			add(new Track(g + "." + t, g, specials[i], kind));
 		}
 	}

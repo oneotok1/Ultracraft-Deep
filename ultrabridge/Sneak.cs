@@ -19,6 +19,17 @@ using UnityEngine;
 
 namespace UltraBridge
 {
+    /// <summary>ULTRAKILL's own crouch is a slide's short body, and the code that decides whether the body may
+    /// stand up runs every frame in HandleSlideState. The sneak key's shorter body has to be taken off the capsule
+    /// before that code looks at it, or it reads a body that is short for no reason it made and puts it back to the
+    /// standing height every frame.</summary>
+    [HarmonyPatch(typeof(NewMovement), "HandleSlideState")]
+    static class SneakShape
+    {
+        static void Prefix(NewMovement __instance) => Sneak.Unshape(__instance);
+        static void Postfix(NewMovement __instance) => Sneak.Shape(__instance);
+    }
+
     [HarmonyPatch(typeof(NewMovement), "FixedUpdate")]
     static class Sneak
     {
@@ -141,6 +152,69 @@ namespace UltraBridge
                 if (!FloorAt(at)) return false;
             }
             return true;
+        }
+
+        /// <summary>ULTRAKILL's standing capsule, in its own units, and the same body crouched. Minecraft's crouch
+        /// is 1.5 of its 1.8, so the cut is the same proportion of V1: a crouched V1 fits under what a crouched
+        /// player fits under, which is the whole point of the key in Minecraft.</summary>
+        const float StandHeight = 3.5f;
+        const float CrouchHeight = StandHeight * 1.5f / 1.8f;
+
+        /// <summary>The capsule's own offset, as ULTRAKILL set it up: put back when the body stands again.</summary>
+        static Vector3 standCenter;
+        static NewMovement shapeOwner;
+        /// <summary>This body's capsule is short because of the sneak key, and nobody else's edit is on it.</summary>
+        static bool shaped;
+
+        /// <summary>Whether the sneak key has V1 down low. Minecraft keeps the crouched height in midair too, and
+        /// so does this; a slide is the game's own shorter body and is left alone, and so is ground that forces a
+        /// crouch of its own.</summary>
+        internal static bool Crouched(NewMovement nm)
+        {
+            return On && nm != null && nm == V1 && !nm.dead && !nm.sliding
+                   && (nm.groundProperties == null || !nm.groundProperties.forceCrouch);
+        }
+
+        /// <summary>Put the body at the height the key asks for. The capsule's bottom is what is kept still - the
+        /// top comes down - so the feet do not move and nothing about where the body stands changes: only the room
+        /// it needs. ULTRAKILL itself shifts the whole body down when it forces a crouch, which also moves the
+        /// feet; the offset does the same job here without touching the transform.</summary>
+        internal static void Shape(NewMovement nm)
+        {
+            var col = nm != null ? nm.playerCollider : null;
+            if (col == null) { shaped = false; return; }
+            // a slide has a height of its own (NewMovement.StartSlide) and the game takes it back up itself, so
+            // this keeps its hands off: leaving the short body in place is the only way that check still runs
+            if (nm.sliding || !Crouched(nm)) { shaped = false; return; }
+            // any other short body (a slide's 1.25, or the game holding the body down under a ceiling) is not
+            // this key's to change
+            if (Mathf.Abs(col.height - StandHeight) > 0.01f && Mathf.Abs(col.height - CrouchHeight) > 0.01f)
+            {
+                shaped = false;
+                return;
+            }
+            if (shapeOwner != nm)
+            {
+                // the capsule's own offset, taken while the body is whole
+                standCenter = col.center;
+                shapeOwner = nm;
+            }
+            col.height = CrouchHeight;
+            col.center = standCenter + Vector3.down * ((StandHeight - CrouchHeight) * 0.5f);
+            shaped = true;
+        }
+
+        /// <summary>Put the body back to its standing shape, if the sneak key is what shortened it. Called before the
+        /// game's own slide handling: that code only runs while the capsule is short, and what it does then - ray up,
+        /// decide whether there is room, shift the whole body - is written for a body it shortened itself.</summary>
+        internal static void Unshape(NewMovement nm)
+        {
+            if (!shaped) return;
+            shaped = false;
+            var col = nm != null ? nm.playerCollider : null;
+            if (col == null || shapeOwner != nm) return;
+            col.height = StandHeight;
+            col.center = standCenter;
         }
 
         /// <summary>The sneak key alone, before the question of what is underfoot.</summary>

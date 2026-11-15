@@ -237,6 +237,8 @@ public final class UcSettingsScreen extends OptionsSubScreen {
 				UltracraftConfig.blastFireOut, v -> UltracraftConfig.blastFireOut = v),
 			bool("Knockback Fall Damage", "Minecraft mobs flung by V1's slam shockwave, explosions or punches take fall damage when they hit the ground. Off: ULTRAKILL's own rule, nothing hurts them until they land.",
 				UltracraftConfig.knockFallDamage, v -> UltracraftConfig.knockFallDamage = v),
+			bool("V1 Never Drowns", "V1's breath never runs out: the bubbles never appear and water cannot hurt it. Off: Minecraft's own rule, as V1 has always had it.",
+				UltracraftConfig.noDrown, v -> UltracraftConfig.noDrown = v),
 			bool("Extra Blood Counts as Health Cap", "Absorption hearts (golden apples and potions) expand V1's maximum health: the health bar and readout extend to include them, and fresh blood refills them back to the boosted cap. Off: absorption acts as a temporary shield that absorbs damage first but cannot be refilled by blood.",
 				UltracraftConfig.absorbCeiling, v -> UltracraftConfig.absorbCeiling = v),
 			slider("Impact Frames", "How long ULTRAKILL's impact frames (the freeze on big hits) last: 0.1x to 3x.", 1, 30, Math.round(UltracraftConfig.impactFrames * 10f),

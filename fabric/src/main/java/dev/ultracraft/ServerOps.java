@@ -297,6 +297,7 @@ public final class ServerOps {
 			}
 			guard("night vision", () -> NightVision.tick(sp));
 			if (!UcNet.isV1(sp)) continue;
+			guard("no drown", () -> NoDrown.tick(sp));
 			if (ticks % 10 == 0) guard("totems", () -> Totems.sync(sp));
 			if (ticks % 10 == 0) guard("armour", () -> Armour.sync(sp));
 			// held: Minecraft's world is frozen for a handover or a load, and the server tick goes on regardless, so

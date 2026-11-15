@@ -74,7 +74,36 @@ namespace UltraBridge
 
         public static bool IsEquipKey(string key) => key != null && key.StartsWith("weapon.") && (key == "weapon.arm0" || Shipped.Contains(key.Substring(7)));
 
-        public static int EquipOf(string key) => Equips.TryGetValue(key, out var v) ? v : 1;
+        /// <summary>A gun key's own version (weapon.rev0 = 1 standard, 2 alternate), alive only while that weapon is
+        /// out: the key hands V1 that exact weapon, and the first switch away puts the shop's own choice back. Never
+        /// saved and never sent to Minecraft, so the shop keeps the baseline it was set to.</summary>
+        static readonly Dictionary<string, int> TempVersion = new Dictionary<string, int>();
+
+        /// <summary>What the shop equipped: the value the key overrides.</summary>
+        public static int BaseEquipOf(string key) => Equips.TryGetValue(key, out var v) ? v : 1;
+
+        public static int EquipOf(string key)
+        {
+            if (key != null && TempVersion.TryGetValue(key, out var t)) return t;
+            return BaseEquipOf(key);
+        }
+
+        /// <summary>The key's version for as long as V1 holds that weapon (rebuilds the loadout so the version is the
+        /// one ULTRAKILL builds).</summary>
+        public void SetTempVersion(string key, int version)
+        {
+            if (TempVersion.TryGetValue(key, out var old) && old == version) return;
+            TempVersion[key] = version;
+            RefreshLoadout();
+        }
+
+        /// <summary>Back to what the shop equipped. True when something was actually overridden.</summary>
+        public bool ClearTempVersions()
+        {
+            if (TempVersion.Count == 0) return false;
+            TempVersion.Clear();
+            return true;
+        }
 
         public void SetEquip(string key, int value)
         {
@@ -161,6 +190,8 @@ namespace UltraBridge
                     originSet = false;
                     tpReceived = false;
                     v1Landed = false;
+                    // a gun key's version lives only while its world does
+                    TempVersion.Clear();
                     Plugin.Log.LogInfo("world left: progress reset until the next world's comes");
                     break;
                 }
@@ -198,6 +229,8 @@ namespace UltraBridge
                     if (!changed) break;
                     Equips.Clear();
                     foreach (var kv in now) Equips[kv.Key] = kv.Value;
+                    // the shop's baseline just changed: whatever a key was holding is settled by it now
+                    TempVersion.Clear();
                     RefreshLoadout();
                     RefreshShopGear();
                     break;
@@ -488,7 +521,7 @@ namespace UltraBridge
         }
         static readonly string[] UpgradeButtons = { "RevolverButton", "ShotgunButton", "NailgunButton", "RailcannonButton", "RocketLauncherButton", "ArmButton" };
         // the arms get a button each: ArmButton and two copies of it
-        static readonly string[] UpgradeListGroups = { "rev", "sho", "nai", "rai", "rock", "arm0", "arm1", "arm2" };
+        static readonly string[] UpgradeListGroups = { "rev", "sho", "nai", "rai", "rock", "arm0", "arm1", "arm2", "gen" };
 
         static string[] GroupOf(string group)
         {
@@ -500,7 +533,9 @@ namespace UltraBridge
         static string[] TracksOf(string group)
         {
             var g = GroupOf(group);
-            var keys = new List<string> { group + ".power" };
+            var keys = new List<string>();
+            // General has no Power: everything on that page is about V1 itself
+            if (group != "gen") keys.Add(group + ".power");
             for (int i = 2; i + 1 < g.Length; i += 2) keys.Add(group + "." + g[i]);
             return keys.ToArray();
         }
@@ -573,8 +608,8 @@ namespace UltraBridge
             var armButton = list != null ? list.Find("ArmButton") : null;
             if (armButton != null && entries.Count == UpgradeButtons.Length)
             {
-                // two more arm buttons, and the eight laid out where the six were (a little slimmer)
-                for (int k = 1; k <= 2; k++)
+                // three more buttons (two arms and General), and the nine laid out where the six were (slimmer)
+                for (int k = 1; k <= 3; k++)
                 {
                     var copy = Instantiate(armButton.gameObject, armButton.parent, false).transform;
                     copy.name = "ArmButton" + k;
@@ -586,7 +621,7 @@ namespace UltraBridge
                 if (first != null && last != null)
                 {
                     float top = first.anchoredPosition.y, bottom = last.anchoredPosition.y;
-                    float oldStep = (top - bottom) / 5f, step = (top - bottom) / 7f;
+                    float oldStep = (top - bottom) / 5f, step = (top - bottom) / 8f;
                     float height = first.sizeDelta.y * step / Mathf.Max(oldStep, 0.001f);
                     for (int k = 0; k < entries.Count; k++)
                     {
@@ -882,7 +917,9 @@ namespace UltraBridge
                     var t = b.GetComponentInChildren<TMP_Text>(true);
                     if (t == null) continue;
                     bool chosen = up.group == kind;
-                    t.text = (chosen ? "<color=#FF4343>></color> " : "") + UpName(GroupOf(kind)[1]) + "  <color=#FF4343>" + Mathf.RoundToInt(Power(kind) * 100f) + "%</color>";
+                    // General has no Power to show
+                    t.text = (chosen ? "<color=#FF4343>></color> " : "") + UpName(GroupOf(kind)[1])
+                        + (kind == "gen" ? "" : "  <color=#FF4343>" + Mathf.RoundToInt(Power(kind) * 100f) + "%</color>");
                     var bt = b.GetComponent<Button>();
                     if (bt != null) bt.interactable = true;
                 }

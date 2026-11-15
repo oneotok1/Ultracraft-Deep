@@ -3,6 +3,15 @@
 Every released version of Ultracraft, newest first. Each heading links to that
 release on GitHub; the current download lives on the [latest release](https://github.com/oneotok1/Ultracraft-Deep/releases/latest).
 
+## Unreleased
+
+- **A General upgrade category.** The upgrade page gains a ninth category, General, with one entry for now and more to come.
+- **V1 no longer drowns.** A new setting, on by default.
+- **More gun keys.** The ULTRAKILL Controls screen gains a key for the alternate version of each gun: once the shop has the weapon, a key switches to its other version at once, and the shop's own loadout is left alone.
+- **Sneaking fits through low gaps.** V1's crouched height now matches Minecraft's.
+- **Terminal tip changes.** The tip's bottom row gains Another and ULTRAKILL tips.
+- **Fixes.** A handful of smaller problems.
+
 ## [1.1.3](https://github.com/oneotok1/Ultracraft-Deep/releases/tag/v1.1.3) — 2026-11-13
 
 - **Minecraft armour now counts.** Armour, protection and resistance reduce what ULTRAKILL enemies do to V1, using Minecraft's own formula.

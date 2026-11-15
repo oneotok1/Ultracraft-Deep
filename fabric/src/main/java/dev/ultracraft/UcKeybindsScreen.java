@@ -44,19 +44,31 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 		new Bind("Weapon/Nailgun", "Nailgun", GLFW.GLFW_KEY_3),
 		new Bind("Weapon/Railcannon", "Railcannon", GLFW.GLFW_KEY_4),
 		new Bind("Weapon/RocketLauncher", "Rocket Launcher", GLFW.GLFW_KEY_5),
-		// one key per weapon (unbound until set): "Gun/<slot>/<colour>" straight to that variant, which ULTRAKILL
-		// knows by its colour (blue, green, red); the Alternate versions share their colour
+		// one key per weapon (unbound until set): "Gun/<slot>/<colour>[/<version>]" straight to that weapon, which
+		// ULTRAKILL knows by its colour (blue, green, red). The three weapons the shop sells an alternate of get a key
+		// for each version (0 standard, 1 alternate), so a key always hands V1 that exact weapon whatever the shop has
+		// equipped; the railcannon and rocket launcher have no alternate and keep one key each.
 		gun(1, 0, "Revolver: Piercer"), gun(1, 1, "Revolver: Marksman"), gun(1, 2, "Revolver: Sharpshooter"),
+		alt(1, 0, "Revolver: Piercer (Alt)"), alt(1, 1, "Revolver: Marksman (Alt)"), alt(1, 2, "Revolver: Sharpshooter (Alt)"),
 		gun(2, 0, "Shotgun: Core Eject"), gun(2, 1, "Shotgun: Pump Charge"), gun(2, 2, "Shotgun: Sawed-On"),
+		alt(2, 0, "Shotgun: Core Eject (Alt)"), alt(2, 1, "Shotgun: Pump Charge (Alt)"), alt(2, 2, "Shotgun: Sawed-On (Alt)"),
 		gun(3, 0, "Nailgun: Attractor"), gun(3, 1, "Nailgun: Overheat"), gun(3, 2, "Nailgun: JumpStart"),
+		alt(3, 0, "Nailgun: Attractor (Alt)"), alt(3, 1, "Nailgun: Overheat (Alt)"), alt(3, 2, "Nailgun: JumpStart (Alt)"),
 		gun(4, 0, "Railcannon: Electric"), gun(4, 1, "Railcannon: Screwdriver"), gun(4, 2, "Railcannon: Malicious"),
 		gun(5, 0, "Rockets: Freezeframe"), gun(5, 1, "Rockets: S.R.S. Cannon"), gun(5, 2, "Rockets: Firestarter"));
 
 	/** No key. */
 	static final int UNBOUND = Integer.MIN_VALUE;
 
+	/** The standard version of the weapon in that slot of that colour. A key always hands V1 exactly the weapon it
+	 * names: the shop's own choice stays as it was, and only decides what V1 carries without a key pressed. */
 	private static Bind gun(int slot, int colour, String label) {
-		return new Bind("Gun/" + slot + "/" + colour, label, UNBOUND);
+		return new Bind("Gun/" + slot + "/" + colour + (slot <= 3 ? "/0" : ""), label, UNBOUND);
+	}
+
+	/** The alternate of it. Only the three weapons the shop sells an alternate of have one. */
+	private static Bind alt(int slot, int colour, String label) {
+		return new Bind("Gun/" + slot + "/" + colour + "/1", label, UNBOUND);
 	}
 
 	/** The per-weapon keys aren't ULTRAKILL's own controls: Minecraft watches them and sends GUN (pollGunKeys). */
@@ -65,7 +77,8 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 	}
 
 
-	private static final boolean[] gunDown = new boolean[16];
+	/** One cell per gun key, in BINDS order. */
+	private static final boolean[] gunDown = new boolean[24];
 
 	/** Guns out, nothing open: a weapon's key switches straight to it (ULTRAKILL: GUN slot colour). */
 	static void pollGunKeys(Minecraft mc, boolean ingame) {
@@ -78,7 +91,10 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 			if (down && !gunDown[g]) {
 				String[] a = b.action.split("/");
 				Ultracraft.gunKey(mc);
-				UkLink.send("GUN " + a[1] + " " + a[2]);
+				// GUN slot colour [version 1 standard, 2 alternate]: a binding made before the version existed has
+				// none, and those three weapons' keys mean the standard one
+				int version = a.length > 3 ? (a[3].equals("0") ? 1 : 2) : (Integer.parseInt(a[1]) <= 3 ? 1 : -1);
+				UkLink.send("GUN " + a[1] + " " + a[2] + " " + version);
 			}
 			gunDown[g++] = down;
 		}
@@ -112,6 +128,7 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 
 	public UcKeybindsScreen(Screen last) {
 		super(last, Minecraft.getInstance().options, Component.translatable("ULTRAKILL Controls"));
+		migrateBinds();
 	}
 
 	/** Minecraft's names ("key.keyboard.t", "key.mouse.left") of the keys rebound to ULTRAKILL. */
@@ -126,6 +143,28 @@ public final class UcKeybindsScreen extends OptionsSubScreen {
 
 	static int key(Bind b) {
 		return UltracraftConfig.ukBinds.getOrDefault(b.action, b.def);
+	}
+
+	/** The name a gun key had before the keys carried a version ("Gun/1/0"), or null. A binding under it meant the
+	 * standard version then and means it now, so it moves across once (see migrateBinds) instead of being read as a
+	 * fallback - a fallback would keep a cleared key alive. */
+	private static String legacyName(String action) {
+		if (!action.startsWith("Gun/") || !action.endsWith("/0")) return null;
+		String old = action.substring(0, action.length() - 2);
+		// only the names that existed then: the weapons with no alternate had no version suffix
+		return old.equals("Gun/1/0") || old.equals("Gun/1/1") || old.equals("Gun/1/2")
+			|| old.equals("Gun/2/0") || old.equals("Gun/2/1") || old.equals("Gun/2/2")
+			|| old.equals("Gun/3/0") || old.equals("Gun/3/1") || old.equals("Gun/3/2") ? old : null;
+	}
+
+	/** Gun keys bound before the version existed move to their versioned name, so nothing reads the old one again. */
+	private static void migrateBinds() {
+		for (Bind b : BINDS) {
+			String old = legacyName(b.action);
+			if (old == null) continue;
+			Integer code = UltracraftConfig.ukBinds.remove(old);
+			if (code != null && !UltracraftConfig.ukBinds.containsKey(b.action)) UltracraftConfig.ukBinds.put(b.action, code);
+		}
 	}
 
 	static Component keyName(int code) {

@@ -1001,11 +1001,14 @@ public final class Ultracraft implements ClientModInitializer {
 		// only a takeover V1 actually goes for spends the token: a respawn or a dimension change while still Steve
 		// sends a TP that ULTRAKILL drops (it is not in a level yet), and spending the token on that one left the
 		// real handover - the toggling into V1 this freeze exists for - with nothing to hold the world
-		if (!handoffUsed && UkLink.ready && active) {
+		boolean hold = !handoffUsed && UkLink.ready && active;
+		if (hold) {
 			handoffUsed = true;
 			setHandoffFrozen(Minecraft.getInstance(), true);
 		}
-		UkLink.send(String.format(Locale.ROOT, "TP %.3f %.3f %.3f %.2f %.2f", p.getX(), p.getY() + 0.05, p.getZ(), p.getYRot(), p.getXRot()));
+		// the hold is what the freeze waits on, and only the first handover gets one: every other teleport (/tp, a
+		// respawn, another dimension) must land V1 where Minecraft put it and leave it free to move at once
+		UkLink.send(String.format(Locale.ROOT, "TP %.3f %.3f %.3f %.2f %.2f %d", p.getX(), p.getY() + 0.05, p.getZ(), p.getYRot(), p.getXRot(), hold ? 1 : 0));
 	}
 
 	private static void handle(Minecraft mc, String msg) {

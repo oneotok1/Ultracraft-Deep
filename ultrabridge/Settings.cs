@@ -99,9 +99,15 @@ namespace UltraBridge
                     break;
                 case "GUN":
                 {
-                    // GUN <slot 1-6> <colour 0 blue, 1 green, 2 red>: a weapon's own key (Minecraft's ULTRAKILL Controls)
+                    // GUN <slot 1-6> <colour 0 blue, 1 green, 2 red> [version 1 standard, 2 alternate]: a weapon's own
+                    // key (Minecraft's ULTRAKILL Controls). The version is left out for weapons with no alternate.
                     var a = rest.Trim().Split(' ');
-                    if (a.Length >= 2 && levelPrepared) Net.Send("GUNINFO " + SwitchToGun(int.Parse(a[0]), int.Parse(a[1])));
+                    if (a.Length >= 2 && levelPrepared)
+                    {
+                        int slot = int.Parse(a[0]), colour = int.Parse(a[1]);
+                        int version = a.Length > 2 ? int.Parse(a[2]) : -1;
+                        Net.Send("GUNINFO " + SwitchToGun(slot, colour, version));
+                    }
                     break;
                 }
                 case "BINDINFO":
@@ -202,9 +208,43 @@ namespace UltraBridge
         /// stored ones for its settings screen.</summary>
         static readonly Dictionary<string, string> PendingBinds = new Dictionary<string, string>();
 
+        /// <summary>The name ULTRAKILL knows a weapon by, from the slot and colour its key is for: the shop's own
+        /// layout, fixed by GunSetter.CheckWeapon. A null entry is a weapon with no alternate.</summary>
+        static readonly string[][] GunNames =
+        {
+            new[] { "rev0", "rev1", "rev2" },
+            new[] { "sho0", "sho1", "sho2" },
+            new[] { "nai0", "nai1", "nai2" },
+            new[] { "rai0", "rai1", "rai2" },
+            new[] { "rock0", "rock1", "rock2" },
+        };
+
+        /// <summary>The weapon a slot's colour is, or null when there is no such weapon in the layout.</summary>
+        static string GunName(int slot, int colour) =>
+            slot >= 1 && slot <= GunNames.Length && colour >= 0 && colour < GunNames[slot - 1].Length ? GunNames[slot - 1][colour] : null;
+
         /// <summary>Straight to one weapon: the variant in that slot with that colour (whichever version, Alternate or
         /// not, V1 has out). Nothing if V1 doesn't own it, or it's already in hand.</summary>
-        string SwitchToGun(int slot, int colour)
+        string SwitchToGun(int slot, int colour) => SwitchToGun(slot, colour, -1);
+
+        /// <summary>Straight to one weapon, in a chosen version: -1 keeps whichever version the shop equipped, 1 and 2
+        /// are the standard and the alternate. The version is a key's own, alive while V1 holds that weapon.</summary>
+        string SwitchToGun(int slot, int colour, int version)
+        {
+            string name = GunName(slot, colour);
+            if (version > 0)
+            {
+                if (name == null) return "no such weapon";
+                // the alternate is a shop item of its own: without it the key has nothing to hand over
+                if (version == 2 && !Owns(name.Substring(0, name.Length - 1) + "alt")) return "no alternate owned";
+                // already the version asked for, by the shop or by an earlier press: nothing to rebuild
+                if (Bridge.EquipOf("weapon." + name) != version) SetTempVersion("weapon." + name, version);
+            }
+            return SwitchToGunNow(slot, colour);
+        }
+
+        /// <summary>The switching itself, after the version is settled.</summary>
+        string SwitchToGunNow(int slot, int colour)
         {
             var gc = MonoSingleton<GunControl>.Instance;
             if (gc == null || slot < 1 || slot > gc.slots.Count) return "no slot";
@@ -217,7 +257,10 @@ namespace UltraBridge
                 seen.Append(list[i] != null ? list[i].name : "null").Append('=').Append(c).Append(' ');
                 if (c != colour) continue;
                 if (gc.currentSlotIndex == slot && gc.currentVariationIndex == i && gc.currentWeapon == list[i]) return "already " + seen;
-                gc.SwitchWeapon(slot, i);
+                // a gun key's own switch keeps the version it just set
+                GunKeySwitch.Switching = true;
+                try { gc.SwitchWeapon(slot, i); }
+                finally { GunKeySwitch.Switching = false; }
                 return "switched to " + i + " (" + seen + ")";
             }
             return "none of " + seen;

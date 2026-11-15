@@ -28,7 +28,7 @@ What changed in each version: [changelog](CHANGELOG.md), and every version has i
 
 **Ultracraft...** (title screen, pause menu, Options, or `/uc settings`) has a page for each of these:
 - **Enemies & Bosses**: Minecraft's mobs, ULTRAKILL's enemies, bosses (the time between them, their difficulty, how often they bring traits), arenas, enemies as Steve, the **Mob Damage Filter** to configure which mobs ULTRAKILL can touch, the **Enemy Spawn Filter** to choose which of ULTRAKILL's enemies turn up in the dark, and the **Boss Trait Filter** to keep traits off a boss's random draw.
-- **Gameplay**: becoming V1, what breaks blocks, blasts putting fires out, fall damage on flung mobs, extra blood as health, impact frames, starting ULTRAKILL with Minecraft.
+- **Gameplay**: becoming V1, what breaks blocks, blasts putting fires out, fall damage on flung mobs, whether V1 can drown, extra blood as health, impact frames, starting ULTRAKILL with Minecraft.
 - **Shop & Rewards**: style rewards, the style streak text display, the OP Shop, the sharp shop screen.
 - **Performance**: ULTRAKILL's resolution and frame rate, frame lock step, low-latency frames.
 - **Music**: ULTRAKILL's fight music, boss themes, calm music, volumes.

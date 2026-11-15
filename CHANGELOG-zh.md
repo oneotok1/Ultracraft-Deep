@@ -3,6 +3,15 @@
 Ultracraft 全部已发布版本，由新到旧。每个标题指向 GitHub 上对应的 Release；
 当前版本请到[最新发布](https://github.com/oneotok1/Ultracraft-Deep/releases/latest)下载。
 
+## 未发布
+
+- **升级页通用分类** 终端升级页新增第 9 个分类「通用」，暂只有一个新的，后续会有别的选项可升级。
+- **V1 不再溺水** 新增开关（默认开）。
+- **武器专属按键扩充** 「ULTRAKILL 按键」菜单的枪械键增加alt版本，商店武器购买后可通过按键即时切换，不影响商店搭配。
+- **潜行修复** 潜行时的高度现已适配。
+- **终端提示更新与切换按钮** 最底一行新增「换提示」与「UK原版提示」。
+- **修复了一些问题。**
+
 ## [1.1.3](https://github.com/oneotok1/Ultracraft-Deep/releases/tag/v1.1.3) — 2026-11-13
 
 - **Minecraft护甲修复** 护甲、附魔与抗性针对 ULTRAKILL 侧敌人已生效。

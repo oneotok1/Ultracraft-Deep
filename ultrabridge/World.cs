@@ -470,6 +470,7 @@ namespace UltraBridge
             bossEids.Clear();
             ForgetOutros();
             altButtons.Clear();
+            tipPanels.Clear();
             styleSeen = -1;
             // the pads stand in the scene, not in the list: clearing the list alone left them behind, and a run
             // that ended in the main menu (this path) came back to find ULTRAKILL's pads floating in Minecraft's
@@ -503,6 +504,7 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
             ClearGrind();
             ClearBosses();
             altButtons.Clear();
+            tipPanels.Clear();
         }
 
         /// <summary>Minecraft moved the origin (V1 again after Steve): what stood around the old one is rebuilt where
@@ -1155,6 +1157,9 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
         float shopScale;      // the root's scale as placed (ULTRAKILL's own, unless that wouldn't fit)
         bool shopFailed, shopTouch, shopNear;
         bool grindRunning, grindIn, spawnsOn = true;
+        // the buttons beside each shop's tip of the day, and whether ULTRAKILL's own tips are in the rotation
+        readonly List<TipPanel> tipPanels = new List<TipPanel>();
+        static bool? ukTips;
         // Minecraft's world is there: the Sandbox outlives it (it stays on its menu scene, its enemies still
         // standing), so "an enemy is alive" alone does not mean a fight is on. TP marks a world in, WORLDRESET out.
         bool mcInWorld;
@@ -1526,6 +1531,7 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
                 tip.text = NextTip();
                 // the tip hangs outside Main Panel, so ShopTexts' own font pass never reaches it
                 ApplyShopFont(tip.transform);
+                MakeTipButtons(go, tip);
             }
             var main = go.transform.Find("Canvas/Background/Main Panel");
             if (main == null) return;
@@ -1534,6 +1540,83 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
             ShopTexts(go);
             shopObject = go;
             DressShopGear(go);
+        }
+
+        /// <summary>The two buttons across the tip of the day's bottom row: another tip on the left, and whether
+        /// ULTRAKILL's own tips take part in the rotation at all on the right (out of the arm's way, which reaches the
+        /// top right). Both are copies of the shop's own Enter button, so ULTRAKILL's pointer reaches them, and they
+        /// hang under the tip so they come and go with it.</summary>
+        void MakeTipButtons(GameObject shop, TMP_Text tip)
+        {
+            var main = shop.transform.Find("Canvas/Background/Main Panel");
+            var srcT = main != null ? main.Find("Sandbox/Sandbox Panel/Panel/Enter Button") : null;
+            if (srcT == null || tip == null || tip.rectTransform == null) return;
+            var panel = new TipPanel { tip = tip };
+            for (int i = 0; i < 2; i++)
+            {
+                var button = Instantiate(srcT.gameObject, tip.transform, false).transform;
+                // i 0 = another tip (left), i 1 = ULTRAKILL's own (right)
+                button.name = i == 0 ? "Swap Tip" : "Uk Tips";
+                var rt = button as RectTransform;
+                if (rt != null)
+                {
+                    // the two share the bottom row: the tip's own width, split in half with a gap down the middle
+                    const float gap = 4f, half = 0.5f;
+                    rt.anchorMin = new Vector2(i == 0 ? 0f : half, 0f);
+                    rt.anchorMax = new Vector2(i == 0 ? half : 1f, 0f);
+                    rt.pivot = new Vector2(0.5f, 0f);
+                    rt.sizeDelta = new Vector2(-gap, 32f);
+                    rt.anchoredPosition = new Vector2(i == 0 ? gap * 0.5f : -gap * 0.5f, 0f);
+                }
+                if (i == 0) Rewire(button, () => TipNext(panel));
+                else Rewire(button, () => TipToggle(panel));
+                var text = button.GetComponentInChildren<TMP_Text>(true);
+                if (text != null)
+                {
+                    text.enableAutoSizing = true;
+                    text.fontSizeMin = 8f;
+                    text.fontSizeMax = 20f;
+                }
+                if (i == 0) panel.swap = text;
+                else panel.uk = text;
+            }
+            tipPanels.Add(panel);
+            TipLabels(panel);
+        }
+
+        class TipPanel
+        {
+            public TMP_Text tip, swap, uk;
+        }
+
+        void TipNext(TipPanel p)
+        {
+            if (p == null || p.tip == null) return;
+            p.tip.text = NextTip();
+            ApplyShopFont(p.tip.transform);
+        }
+
+        void TipToggle(TipPanel p)
+        {
+            UkTips = !UkTips;
+            if (p != null && p.tip != null)
+            {
+                // with ULTRAKILL's tips out, the one on screen would keep showing one of them
+                p.tip.text = NextTip();
+                ApplyShopFont(p.tip.transform);
+            }
+            foreach (var each in tipPanels) TipLabels(each);
+        }
+
+        void TipLabels(TipPanel p)
+        {
+            if (p == null) return;
+            SetText(p.swap != null ? p.swap.transform : null, Zh ? "换提示" : "Another");
+            SetText(p.uk != null ? p.uk.transform : null, Zh
+                ? (UkTips ? "UK原版提示 开" : "UK原版提示 关")
+                : (UkTips ? "ULTRAKILL tips ON" : "ULTRAKILL tips OFF"));
+            ApplyShopFont(p.swap != null ? p.swap.transform : null);
+            ApplyShopFont(p.uk != null ? p.uk.transform : null);
         }
 
         /// <summary>A button that would load another level (the Cyber Grind's, the Sandbox's) does this instead.</summary>
@@ -1595,6 +1678,9 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
         internal void ShopTexts()
         {
             if (shopObject != null) ShopTexts(shopObject);
+            // a tip already on screen was drawn in the language that was current when the shop appeared
+            foreach (var p in tipPanels) TipNext(p);
+            foreach (var p in tipPanels) TipLabels(p);
         }
 
         static void SetText(Transform t, string text)
@@ -1625,25 +1711,52 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
             "Minecraft's mobs <color=#FF4343>bleed</color> like anything else.\n\nGet close: their blood <color=#FF4343>heals</color> you.",
             "A <color=#FF4343>rocket</color> or <color=#FF4343>core</color> struck by a charged shot goes off as a <color=#FF4343>nuke</color>.\n\nThe terrain does not survive it.",
             "Slam down from high enough and <color=#FF4343>the ground caves in</color>.",
-            "<color=#FF4343>The Cyber Grind</color> runs right here, around this terminal.\n\nIt ends when V1 dies or runs."
+            "<color=#FF4343>The Cyber Grind</color> runs right here, around this terminal or in a fight inside it.\n\nIt ends when V1 dies or leaves.",
+            "Your <color=#FF4343>wings</color> seem stronger here? You can carry more weapons now.\n\nIt does not change the equipment order you set in the shop.",
+            "You can afford to slow down now.\n\nPress <color=#FF4343>Left Alt</color> to sneak: building is a lot easier that way."
         };
 
-        string NextTip()
+        /// <summary>Whether ULTRAKILL's own tips are in the rotation. Minecraft's always are, so turning this off
+        /// leaves the tip of the day entirely about where V1 is. Kept in PlayerPrefs the way ULTRAKILL keeps its own.</summary>
+        static bool UkTips
         {
-            if (UnityEngine.Random.value < 0.5f)
+            get
             {
-                int pick = UnityEngine.Random.Range(0, LevelTips.Length);
-                string zh;
-                if (Zh && TipTextsZh.Levels.TryGetValue(LevelTips[pick], out zh)) return zh;
-                try
-                {
-                    var key = "Assets/Data/Level Tips/" + LevelTips[pick] + ".asset";
-                    var tip = Addressables.LoadAssetAsync<ScriptableObjects.TipOfTheDay>(key).WaitForCompletion();
-                    if (tip != null && !string.IsNullOrEmpty(tip.tip)) return tip.tip;
-                }
-                catch (Exception e) { Plugin.Log.LogDebug("tip: " + e.Message); }
+                if (!ukTips.HasValue) ukTips = PlayerPrefs.GetInt("UltraBridgeUkTips", 1) != 0;
+                return ukTips.Value;
             }
-            int mine = UnityEngine.Random.Range(0, MinecraftTips.Length);
+            set
+            {
+                ukTips = value;
+                PlayerPrefs.SetInt("UltraBridgeUkTips", value ? 1 : 0);
+                PlayerPrefs.Save();
+            }
+        }
+
+        /// <summary>A tip of the day: ULTRAKILL's own about half the time, otherwise one about where V1 is.</summary>
+        string NextTip() => UkTips && UnityEngine.Random.value < 0.5f ? UkTip() : McTip();
+
+        string UkTip()
+        {
+            int pick = UnityEngine.Random.Range(0, LevelTips.Length);
+            string zh;
+            if (Zh && TipTextsZh.Levels.TryGetValue(LevelTips[pick], out zh)) return zh;
+            try
+            {
+                var key = "Assets/Data/Level Tips/" + LevelTips[pick] + ".asset";
+                var tip = Addressables.LoadAssetAsync<ScriptableObjects.TipOfTheDay>(key).WaitForCompletion();
+                if (tip != null && !string.IsNullOrEmpty(tip.tip)) return tip.tip;
+            }
+            catch (Exception e) { Plugin.Log.LogDebug("tip: " + e.Message); }
+            return McTip();
+        }
+
+        /// <summary>One about where V1 is. The English sits here and the Chinese is generated (TipTextsZh), so the
+        /// two have to stay the same length and the same order: the pick is clamped to the shorter of them.</summary>
+        string McTip()
+        {
+            int count = Zh ? Mathf.Min(MinecraftTips.Length, TipTextsZh.Minecraft.Length) : MinecraftTips.Length;
+            int mine = UnityEngine.Random.Range(0, count);
             return Zh ? TipTextsZh.Minecraft[mine] : MinecraftTips[mine];
         }
 
@@ -1661,6 +1774,8 @@ foreach (var go in jumpPads) if (go != null) Destroy(go);
                 if (ZoneIn(z)) near = true;
             }
             if (touch == shopTouch && near == shopNear) return;
+            // a shop shows what it equipped, so a gun key's own version ends as the shop is entered
+            if (touch && !shopTouch) Bridge.I?.ClearTempVersions();
             shopTouch = touch;
             shopNear = near;
             Net.Send("SHOPZONE " + (touch ? 1 : 0) + " " + (near ? 1 : 0));

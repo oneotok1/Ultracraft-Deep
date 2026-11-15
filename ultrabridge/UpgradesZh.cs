@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace UltraBridge
@@ -38,6 +38,7 @@ namespace UltraBridge
             { "Demolition", "地面爆破" },
             { "Detonator", "命中引爆" },
             { "Seismic", "地脉震荡" },
+            { "Hard Damage Recovery", "硬伤害恢复" },
             { "Ironclad", "装甲减伤" },
             { "Overcharge", "过载充能" },
             { "Reel", "快速收回" },
@@ -55,6 +56,7 @@ namespace UltraBridge
             { "Feedbacker", "反弹/蓝拳" },
             { "Knuckleblaster", "爆破/红拳" },
             { "Whiplash", "勾爪" },
+            { "General", "通用" },
         };
 
         /// <summary>An upgrade's name as shown: Chinese on a Chinese Minecraft, English otherwise.</summary>
@@ -86,6 +88,10 @@ namespace UltraBridge
                 case "adrenaline": return level <= 1 ? "关闭" : "+" + At(AdrenalineTable, level) + " 体力" + (level >= 5 ? "（额外 +25 HP）" : "");
                 case "detonator": return level <= 1 ? "关闭" : Mathf.RoundToInt(At(DetonatorTable, level) * 100f) + "% 爆炸范围";
                 case "seismic": return level <= 1 ? "关闭" : Mathf.RoundToInt(At(SeismicTable, level) * 100f) + "% 爆炸范围";
+                case "recovery":
+                    if (level <= 1) return "关闭";
+                    string clear = level >= 15 ? "，S 以上无硬伤害" : level >= 14 ? "，SS 以上无硬伤害" : level >= 13 ? "，SSS 以上无硬伤害" : "";
+                    return "恢复速率 x" + RecoverySpeed(level).ToString("0.##") + clear;
                 case "ironclad": return level <= 1 ? "关闭" : "-" + Mathf.RoundToInt(At(IroncladTable, level) * 100f) + "% 受到伤害";
                 case "overcharge": return "x" + At(RateTable, level).ToString("0.##") + " 充能速度";
                 case "grapple": return level <= 1 ? "关闭" : "拉拽速度 " + At(GrappleTable, level);
@@ -125,7 +131,8 @@ namespace UltraBridge
                 case "arm1.shockwave": return "红拳冲击波范围更大。";
                 case "arm1.demolition": return "向地面拳击挖掘范围更大。";
                 case "arm1.detonator": return "拳击命中目标引发爆炸。";
-                case "arm1.seismic": return "下砸落地时在身周引发爆炸。";
+                case "gen.seismic": return "下砸落地时在身周引发爆炸。";
+                case "gen.recovery": return "硬伤害随风格等级更快消退；最后三级会让S或以上无硬伤害。";
                 case "arm1.ironclad": return "手持爆破/红拳时受到伤害降低。";
                 case "arm1.overcharge": return "手持爆破/红拳时，拳击冷却更快。";
                 case "arm2.reel": return "勾爪重掷更快。";

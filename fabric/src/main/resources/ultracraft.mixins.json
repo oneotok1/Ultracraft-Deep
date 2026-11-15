@@ -16,6 +16,7 @@
     "MinecraftMixin",
     "MouseHandlerMixin",
     "MusicManagerMixin",
+    "ScreenEffectMixin",
     "WindowMixin"
   ],
   "mixins": [
